@@ -115,7 +115,8 @@ const checkUserExists = asyncHandler(async (req, res, next) => {
 // @desc    Login user with email/phone & password
 // @access  Public
 const login = asyncHandler(async (req, res, next) => {
-    const { identifier, password } = req.body;
+    let { identifier, password } = req.body;
+    identifier = identifier.trim();
 
     // Check if identifier is email or phone
     const isEmail = identifier.includes('@');
@@ -193,10 +194,212 @@ const googleLogin = asyncHandler(async (req, res, next) => {
     });
 });
 
+// @route   POST /api/auth/forgot-password
+// @desc    Initiate password reset (send OTP to email)
+// @access  Public
+const forgotPassword = asyncHandler(async (req, res, next) => {
+    const { identifier } = req.body;
+
+    const isEmail = identifier.includes('@');
+    const query = isEmail ? { email: identifier } : { phone: identifier };
+
+    const user = await User.findOne(query);
+
+    if (!user) {
+        throw new ErrorResponse('User not found. Please check your details.', 404);
+    }
+
+    if (user.authProvider === 'GOOGLE') {
+        throw new ErrorResponse('This account is linked with Google. Please use Google Login.', 400);
+    }
+
+    if (!user.email) {
+        throw new ErrorResponse('No email associated with this account. Cannot send OTP.', 400);
+    }
+
+    const email = user.email;
+
+    // Generate a 6 digit random OTP
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // Remove any existing OTP for this email
+    await Otp.deleteMany({ email });
+
+    // Save the new OTP in the database (expires in 5 minutes via TTL)
+    await Otp.create({ email, otp: otpCode });
+
+    // Send the email
+    try {
+        const message = `You requested a password reset.\n\nYour Verification Code is: ${otpCode}\n\nThis code is valid for 5 minutes.`;
+        
+        await sendEmail({
+            email,
+            subject: 'AgriConnect - Password Reset Code',
+            message,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+                    <h2 style="color: #00B464; text-align: center;">🌾 AgriConnect</h2>
+                    <p style="color: #334155; font-size: 16px;">Hello ${user.name},</p>
+                    <p style="color: #334155; font-size: 16px;">You requested a password reset. Here is your verification code:</p>
+                    <div style="background-color: #f1f5f9; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
+                        <h1 style="color: #0f172a; letter-spacing: 5px; margin: 0;">${otpCode}</h1>
+                    </div>
+                    <p style="color: #64748b; font-size: 14px;">This code will expire in 5 minutes.</p>
+                    <p style="color: #64748b; font-size: 14px;">If you did not request this, please ignore this email.</p>
+                </div>
+            `
+        });
+
+        res.status(200).json({
+            success: true,
+            email: email, // Return email so frontend knows where it was sent
+            message: 'OTP sent to registered email'
+        });
+    } catch (error) {
+        console.error("Email Error:", error);
+        await Otp.deleteMany({ email });
+        throw new ErrorResponse('Email could not be sent. Check server configuration.', 500);
+    }
+});
+
+// @route   POST /api/auth/reset-password
+// @desc    Verify OTP and update password
+// @access  Public
+const resetPassword = asyncHandler(async (req, res, next) => {
+    const { email, otp, newPassword } = req.body;
+
+    const user = await User.findOne({ email });
+    if (!user) {
+        throw new ErrorResponse('User not found.', 404);
+    }
+
+    // Find the latest OTP for this email
+    const otpRecord = await Otp.findOne({ email }).sort({ createdAt: -1 });
+
+    if (!otpRecord || otpRecord.otp !== otp) {
+        throw new ErrorResponse('OTP is expired or invalid.', 400);
+    }
+
+    // Update user password
+    user.password = newPassword;
+    await user.save(); // Pre-save hook will hash it
+
+    // Delete used OTP
+    await Otp.deleteMany({ email });
+
+    res.status(200).json({
+        success: true,
+        message: 'Password reset successfully. You can now login.'
+    });
+});
+
+// @route   POST /api/auth/login-otp/send
+// @desc    Send OTP for password-less login
+// @access  Public
+const sendLoginOtp = asyncHandler(async (req, res, next) => {
+    let { identifier } = req.body;
+    identifier = identifier.trim();
+
+    const isEmail = identifier.includes('@');
+    const query = isEmail ? { email: identifier } : { phone: identifier };
+
+    const user = await User.findOne(query);
+
+    if (!user) {
+        throw new ErrorResponse('No account found with this Email/Phone. Please register first.', 404);
+    }
+
+    if (user.authProvider === 'GOOGLE') {
+        throw new ErrorResponse('This account is linked with Google. Please use Google Login.', 400);
+    }
+
+    if (!user.email) {
+        throw new ErrorResponse('No email linked to this account for OTP verification.', 400);
+    }
+
+    const email = user.email;
+    const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    await Otp.deleteMany({ email });
+    await Otp.create({ email, otp: otpCode });
+
+    try {
+        const message = `Your Login OTP is: ${otpCode}\n\nThis code is valid for 5 minutes.`;
+        await sendEmail({
+            email,
+            subject: 'AgriConnect - Login OTP',
+            message,
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+                    <h2 style="color: #00B464; text-align: center;">🌾 AgriConnect</h2>
+                    <p style="color: #334155; font-size: 16px;">Hello ${user.name},</p>
+                    <p style="color: #334155; font-size: 16px;">Your One Time Password (OTP) for login is:</p>
+                    <div style="background-color: #f1f5f9; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
+                        <h1 style="color: #0f172a; letter-spacing: 5px; margin: 0;">${otpCode}</h1>
+                    </div>
+                    <p style="color: #64748b; font-size: 14px;">This code will expire in 5 minutes.</p>
+                </div>
+            `
+        });
+
+        res.status(200).json({
+            success: true,
+            email: email,
+            message: 'OTP sent to registered email'
+        });
+    } catch (error) {
+        console.error("Email Error:", error);
+        await Otp.deleteMany({ email });
+        throw new ErrorResponse('Email could not be sent. Please try again.', 500);
+    }
+});
+
+// @route   POST /api/auth/login-otp/verify
+// @desc    Verify OTP and return JWT token
+// @access  Public
+const verifyLoginOtp = asyncHandler(async (req, res, next) => {
+    let { identifier, otp } = req.body;
+    identifier = identifier.trim();
+
+    const isEmail = identifier.includes('@');
+    const query = isEmail ? { email: identifier } : { phone: identifier };
+
+    const user = await User.findOne(query);
+    if (!user) {
+        throw new ErrorResponse('User not found.', 404);
+    }
+
+    const otpRecord = await Otp.findOne({ email: user.email }).sort({ createdAt: -1 });
+
+    if (!otpRecord || otpRecord.otp !== otp) {
+        throw new ErrorResponse('Invalid or expired OTP.', 400);
+    }
+
+    await Otp.deleteMany({ email: user.email });
+
+    const token = user.getSignedJwtToken();
+
+    res.status(200).json({
+        success: true,
+        token,
+        user: {
+            id: user._id,
+            name: user.name,
+            role: user.role,
+            phone: user.phone,
+            email: user.email
+        }
+    });
+});
+
 module.exports = {
     sendOtp,
     verifyOtp,
     checkUserExists,
     login,
-    googleLogin
+    googleLogin,
+    forgotPassword,
+    resetPassword,
+    sendLoginOtp,
+    verifyLoginOtp
 };

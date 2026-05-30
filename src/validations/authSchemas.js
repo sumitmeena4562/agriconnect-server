@@ -70,11 +70,36 @@ const googleLoginSchema = z.object({
     googleId: z.string().min(1, 'Google ID is required')
 });
 
+// Schema for /api/auth/forgot-password
+const forgotPasswordSchema = z.object({
+    identifier: z.string().min(1, 'Email or Phone is required')
+});
+
+// Schema for /api/auth/reset-password
+const resetPasswordSchema = z.object({
+    email: z.string().email('Invalid email address'),
+    otp: z.string().length(6, 'OTP must be exactly 6 digits'),
+    newPassword: z.string().min(6, 'Password must be at least 6 characters long')
+});
+
+const sendLoginOtpSchema = z.object({
+    identifier: z.string().min(1, 'Email or Phone is required')
+});
+
+const verifyLoginOtpSchema = z.object({
+    identifier: z.string().min(1, 'Email or Phone is required'),
+    otp: z.string().length(6, 'OTP must be exactly 6 digits')
+});
+
 module.exports = {
     sendOtpSchema,
     verifyOtpSchema,
     checkUserSchema,
     registerFarmerSchema,
     loginSchema,
-    googleLoginSchema
+    googleLoginSchema,
+    forgotPasswordSchema,
+    resetPasswordSchema,
+    sendLoginOtpSchema,
+    verifyLoginOtpSchema
 };
