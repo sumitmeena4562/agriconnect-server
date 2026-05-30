@@ -46,6 +46,7 @@ app.use((req, res, next) => {
 
 const farmerRoutes = require('./routes/farmerRoutes');
 const authRoutes = require('./routes/authRoutes');
+const cropRoutes = require('./routes/cropRoutes');
 
 // Basic Route
 app.get('/', (req, res) => {
@@ -55,6 +56,7 @@ app.get('/', (req, res) => {
 // Mount routes
 app.use('/api/farmers', farmerRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/crops', cropRoutes);
 
 // Error Handler Middleware (MUST be after routes)
 app.use(errorHandler);
