@@ -47,30 +47,43 @@ const registerFarmer = asyncHandler(async (req, res, next) => {
         throw new ErrorResponse('Invalid user data received', 400);
     }
 
-    // 2. Create the FarmerProfile linked to this User
-    const farmerProfile = await FarmerProfile.create({
-        user: user._id,
-        location: {
-            state,
-            district,
-            village
-        },
-        farmDetails: {
-            landSize,
-            landUnit,
-            crops,
-            irrigation
-        }
-    });
+    // 2. Create the FarmerProfile linked to this User with Rollback Logic
+    let farmerProfile;
+    try {
+        farmerProfile = await FarmerProfile.create({
+            user: user._id,
+            location: {
+                state,
+                district,
+                village
+            },
+            farmDetails: {
+                landSize,
+                landUnit,
+                crops,
+                irrigation
+            }
+        });
+    } catch (profileError) {
+        // Rollback: delete the user if profile creation fails
+        await User.findByIdAndDelete(user._id);
+        console.error("Profile Creation Failed, rolling back user.", profileError);
+        throw new ErrorResponse('Failed to create farmer profile. Please try again.', 500);
+    }
+
+    // Generate JWT Token
+    const token = user.getSignedJwtToken();
 
     res.status(201).json({
         success: true,
         message: 'Farmer Registration successful!',
         data: {
+            token,
             user: {
                 id: user._id,
                 name: user.name,
                 phone: user.phone,
+                email: user.email,
                 role: user.role
             },
             profileId: farmerProfile._id

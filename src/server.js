@@ -3,6 +3,8 @@ const dotenv = require('dotenv');
 const cors = require('cors');
 const colors = require('colors');
 const morgan = require('morgan');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
 const errorHandler = require('./middleware/error');
 const connectDB = require('./config/db');
 
@@ -14,8 +16,14 @@ connectDB();
 
 const app = express();
 
+// Set security headers
+app.use(helmet());
+
 // Body parser
 app.use(express.json());
+
+// Sanitize data (prevent NoSQL injection)
+app.use(mongoSanitize());
 
 // Enable CORS
 app.use(cors());
