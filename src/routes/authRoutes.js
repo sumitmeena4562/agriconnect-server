@@ -1,8 +1,8 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { sendOtp, verifyOtp, checkUserExists } = require('../controllers/authController');
+const { sendOtp, verifyOtp, checkUserExists, login, googleLogin } = require('../controllers/authController');
 const validateRequest = require('../middleware/validateRequest');
-const { sendOtpSchema, verifyOtpSchema, checkUserSchema } = require('../validations/authSchemas');
+const { sendOtpSchema, verifyOtpSchema, checkUserSchema, loginSchema, googleLoginSchema } = require('../validations/authSchemas');
 
 const router = express.Router();
 
@@ -15,6 +15,10 @@ const otpLimiter = rateLimit({
         error: 'Too many OTP requests from this IP, please try again after 10 minutes.'
     }
 });
+
+// Auth Routes
+router.post('/login', validateRequest(loginSchema), login);
+router.post('/google-login', validateRequest(googleLoginSchema), googleLogin);
 
 router.post('/send-otp', otpLimiter, validateRequest(sendOtpSchema), sendOtp);
 router.post('/verify-otp', otpLimiter, validateRequest(verifyOtpSchema), verifyOtp);

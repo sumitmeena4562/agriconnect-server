@@ -58,9 +58,23 @@ const registerFarmerSchema = z.object({
     path: ["password"]
 });
 
+// Schema for /api/auth/login
+const loginSchema = z.object({
+    identifier: z.string().min(1, 'Email or Phone is required'),
+    password: z.string().min(6, 'Password must be at least 6 characters')
+});
+
+// Schema for /api/auth/google-login
+const googleLoginSchema = z.object({
+    email: z.string().email('Valid email is required'),
+    googleId: z.string().min(1, 'Google ID is required')
+});
+
 module.exports = {
     sendOtpSchema,
     verifyOtpSchema,
     checkUserSchema,
-    registerFarmerSchema
+    registerFarmerSchema,
+    loginSchema,
+    googleLoginSchema
 };

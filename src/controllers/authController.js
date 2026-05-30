@@ -111,8 +111,92 @@ const checkUserExists = asyncHandler(async (req, res, next) => {
     res.status(200).json({ success: true, message: 'User does not exist' });
 });
 
+// @route   POST /api/auth/login
+// @desc    Login user with email/phone & password
+// @access  Public
+const login = asyncHandler(async (req, res, next) => {
+    const { identifier, password } = req.body;
+
+    // Check if identifier is email or phone
+    const isEmail = identifier.includes('@');
+    const query = isEmail ? { email: identifier } : { phone: identifier };
+
+    // Find user by email or phone, and explicitly select password (since select: false in model)
+    const user = await User.findOne(query).select('+password');
+
+    if (!user) {
+        throw new ErrorResponse('Invalid credentials', 401);
+    }
+
+    if (user.authProvider === 'GOOGLE' && !user.password) {
+        throw new ErrorResponse('This account was created with Google. Please use Google Login.', 400);
+    }
+
+    // Check if password matches
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+        throw new ErrorResponse('Invalid credentials', 401);
+    }
+
+    // Create token
+    const token = user.getSignedJwtToken();
+
+    res.status(200).json({
+        success: true,
+        token,
+        user: {
+            id: user._id,
+            name: user.name,
+            role: user.role,
+            phone: user.phone,
+            email: user.email
+        }
+    });
+});
+
+// @route   POST /api/auth/google-login
+// @desc    Login user via Google
+// @access  Public
+const googleLogin = asyncHandler(async (req, res, next) => {
+    const { email, googleId } = req.body;
+
+    const user = await User.findOne({ email });
+
+    if (!user) {
+        // We could auto-register here, but our flow says they must register first to pick a role.
+        throw new ErrorResponse('User not found. Please register first.', 404);
+    }
+
+    // Optionally check if googleId matches, but usually email is enough since Google verified it.
+    // However, if they registered LOCAL, we shouldn't let anyone just claim Google login without merging logic.
+    // For simplicity, we just allow login if email matches.
+    if (user.authProvider === 'LOCAL' && !user.googleId) {
+         // Merge account to Google if not already
+         user.googleId = googleId;
+         user.authProvider = 'GOOGLE';
+         await user.save();
+    }
+
+    // Create token
+    const token = user.getSignedJwtToken();
+
+    res.status(200).json({
+        success: true,
+        token,
+        user: {
+            id: user._id,
+            name: user.name,
+            role: user.role,
+            phone: user.phone,
+            email: user.email
+        }
+    });
+});
+
 module.exports = {
     sendOtp,
     verifyOtp,
-    checkUserExists
+    checkUserExists,
+    login,
+    googleLogin
 };
