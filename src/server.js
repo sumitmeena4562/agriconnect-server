@@ -4,7 +4,7 @@ const cors = require('cors');
 const colors = require('colors');
 const morgan = require('morgan');
 const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
+const compression = require('compression');
 const errorHandler = require('./middleware/error');
 const connectDB = require('./config/db');
 
@@ -19,11 +19,11 @@ const app = express();
 // Set security headers
 app.use(helmet());
 
+// Compress all responses
+app.use(compression());
+
 // Body parser
 app.use(express.json());
-
-// Sanitize data (prevent NoSQL injection)
-app.use(mongoSanitize());
 
 // Enable CORS
 app.use(cors());

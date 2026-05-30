@@ -1,6 +1,7 @@
 const asyncHandler = require('../middleware/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const Otp = require('../models/Otp');
+const User = require('../models/User');
 const sendEmail = require('../utils/sendEmail');
 
 // @route   POST /api/auth/send-otp
@@ -9,8 +10,10 @@ const sendEmail = require('../utils/sendEmail');
 const sendOtp = asyncHandler(async (req, res, next) => {
     const { email } = req.body;
 
-    if (!email) {
-        throw new ErrorResponse('Please provide an email address', 400);
+    // Check if user already exists BEFORE sending OTP
+    const userExists = await User.findOne({ email });
+    if (userExists) {
+        throw new ErrorResponse('This email is already registered. Please login instead.', 400);
     }
 
     // Generate a 6 digit random OTP
@@ -65,10 +68,6 @@ const sendOtp = asyncHandler(async (req, res, next) => {
 const verifyOtp = asyncHandler(async (req, res, next) => {
     const { email, otp } = req.body;
 
-    if (!email || !otp) {
-        throw new ErrorResponse('Please provide email and OTP', 400);
-    }
-
     // Find the latest OTP for this email
     const otpRecord = await Otp.findOne({ email }).sort({ createdAt: -1 });
 
@@ -89,7 +88,31 @@ const verifyOtp = asyncHandler(async (req, res, next) => {
     });
 });
 
+// @route   POST /api/auth/check-user
+// @desc    Check if a user exists by email or phone
+// @access  Public
+const checkUserExists = asyncHandler(async (req, res, next) => {
+    const { email, phone } = req.body;
+
+    if (email) {
+        const userExists = await User.findOne({ email });
+        if (userExists) {
+            throw new ErrorResponse('This email is already registered. Please login instead.', 400);
+        }
+    }
+
+    if (phone) {
+        const phoneExists = await User.findOne({ phone });
+        if (phoneExists) {
+            throw new ErrorResponse('This phone number is already registered. Please login instead.', 400);
+        }
+    }
+
+    res.status(200).json({ success: true, message: 'User does not exist' });
+});
+
 module.exports = {
     sendOtp,
-    verifyOtp
+    verifyOtp,
+    checkUserExists
 };

@@ -9,15 +9,6 @@ const ErrorResponse = require('../utils/errorResponse');
 const registerFarmer = asyncHandler(async (req, res, next) => {
     const { phone, email, password, name, state, district, village, landSize, landUnit, crops, irrigation, authProvider, googleId } = req.body;
 
-    // Validation: Password is required only if it's LOCAL
-    if (!phone || !name || !state || !district || !village || !landSize || !crops || !irrigation) {
-        throw new ErrorResponse('Please provide all required fields', 400);
-    }
-
-    if ((!authProvider || authProvider === 'LOCAL') && !password) {
-        throw new ErrorResponse('Please provide a password', 400);
-    }
-
     // Check if user already exists
     const userExists = await User.findOne({ phone });
     if (userExists) {

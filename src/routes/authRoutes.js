@@ -1,6 +1,8 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { sendOtp, verifyOtp } = require('../controllers/authController');
+const { sendOtp, verifyOtp, checkUserExists } = require('../controllers/authController');
+const validateRequest = require('../middleware/validateRequest');
+const { sendOtpSchema, verifyOtpSchema, checkUserSchema } = require('../validations/authSchemas');
 
 const router = express.Router();
 
@@ -14,7 +16,8 @@ const otpLimiter = rateLimit({
     }
 });
 
-router.post('/send-otp', otpLimiter, sendOtp);
-router.post('/verify-otp', otpLimiter, verifyOtp);
+router.post('/send-otp', otpLimiter, validateRequest(sendOtpSchema), sendOtp);
+router.post('/verify-otp', otpLimiter, validateRequest(verifyOtpSchema), verifyOtp);
+router.post('/check-user', validateRequest(checkUserSchema), checkUserExists);
 
 module.exports = router;
