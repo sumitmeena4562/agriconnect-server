@@ -19,11 +19,11 @@ const SENSITIVE_FIELDS = [
 /**
  * Recursively masks sensitive fields in objects/arrays
  */
-const maskSensitiveData = (data) => {
+const recursiveMask = (data) => {
   if (data === null || data === undefined) return data;
   
   if (Array.isArray(data)) {
-    return data.map(maskSensitiveData);
+    return data.map(recursiveMask);
   }
   
   if (typeof data === 'object') {
@@ -32,7 +32,7 @@ const maskSensitiveData = (data) => {
       if (SENSITIVE_FIELDS.includes(key)) {
         masked[key] = '********';
       } else if (typeof value === 'object') {
-        masked[key] = maskSensitiveData(value);
+        masked[key] = recursiveMask(value);
       } else {
         masked[key] = value;
       }
@@ -41,6 +41,22 @@ const maskSensitiveData = (data) => {
   }
   
   return data;
+};
+
+/**
+ * Recursively masks sensitive fields in objects/arrays safely,
+ * avoiding circular references and Mongoose class instances.
+ */
+const maskSensitiveData = (data) => {
+  if (data === null || data === undefined) return data;
+  
+  try {
+    // Convert to plain JSON to strip complex class prototypes, buffers, and circular references
+    const plainData = JSON.parse(JSON.stringify(data));
+    return recursiveMask(plainData);
+  } catch (e) {
+    return '[Circular or Non-Serializable Data]';
+  }
 };
 
 /**

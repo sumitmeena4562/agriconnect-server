@@ -235,12 +235,13 @@ const getMarketplaceCrops = asyncHandler(async (req, res) => {
     query.category = category;
   }
 
-  // Location filtering (Exact match or regex)
-  if (state) {
-    query['location.state'] = { $regex: state, $options: 'i' };
-  }
-  if (city) {
-    query['location.city'] = { $regex: city, $options: 'i' };
+  // Location filtering (Regex match on the string)
+  if (state && city) {
+    query.location = { $regex: `(?=.*${state})(?=.*${city})`, $options: 'i' };
+  } else if (state) {
+    query.location = { $regex: state, $options: 'i' };
+  } else if (city) {
+    query.location = { $regex: city, $options: 'i' };
   }
 
   // Pagination Math
