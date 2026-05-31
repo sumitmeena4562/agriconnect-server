@@ -58,6 +58,22 @@ const registerFarmerSchema = z.object({
     path: ["password"]
 });
 
+// Schema for /api/auth/register-vendor
+const registerVendorSchema = z.object({
+    phone: z.string().regex(/^[0-9]{7,15}$/, 'Enter a valid mobile number'),
+    email: z.string().email('Enter a valid email address').optional().or(z.literal('')),
+    name: z.string().min(3, 'Name must be at least 3 characters'),
+    password: z.string().min(6, 'Password must be at least 6 characters long'),
+    
+    businessName: z.string().optional(),
+    gstNumber: z.string().optional(),
+    interestedCategories: z.array(z.string()).optional(),
+    
+    godownAddress: z.string().min(5, 'Delivery address is too short'),
+    city: z.string().min(2, 'City is required'),
+    state: z.string().min(2, 'State is required')
+});
+
 // Schema for /api/auth/login
 const loginSchema = z.object({
     identifier: z.string().min(1, 'Email or Phone is required'),
@@ -96,6 +112,7 @@ module.exports = {
     verifyOtpSchema,
     checkUserSchema,
     registerFarmerSchema,
+    registerVendorSchema,
     loginSchema,
     googleLoginSchema,
     forgotPasswordSchema,

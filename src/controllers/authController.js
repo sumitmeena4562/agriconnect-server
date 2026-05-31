@@ -392,6 +392,75 @@ const verifyLoginOtp = asyncHandler(async (req, res, next) => {
     });
 });
 
+const VendorProfile = require('../models/VendorProfile');
+
+// @route   POST /api/auth/register-vendor
+// @desc    Register a new Vendor (Aggregator)
+// @access  Public
+const registerVendor = asyncHandler(async (req, res, next) => {
+    const { phone, email, password, name, businessName, gstNumber, interestedCategories, godownAddress, city, state } = req.body;
+
+    // Check if user already exists
+    const userExists = await User.findOne({ phone });
+    if (userExists) {
+        throw new ErrorResponse('User with this phone number is already registered.', 400);
+    }
+
+    if (email) {
+        const emailExists = await User.findOne({ email });
+        if (emailExists) {
+            throw new ErrorResponse('User with this email is already registered.', 400);
+        }
+    }
+
+    // Create the User (core details only)
+    const user = await User.create({
+        phone,
+        email: email || undefined,
+        password,
+        name,
+        role: 'VENDOR'
+    });
+
+    if (!user) {
+        throw new ErrorResponse('Invalid user data received', 400);
+    }
+
+    // Create the Vendor Profile linked to the User
+    const vendorProfile = await VendorProfile.create({
+        user: user._id,
+        businessName: businessName || '',
+        gstNumber: gstNumber || '',
+        interestedCategories: interestedCategories || [],
+        godownAddress: godownAddress || '',
+        city: city || '',
+        state: state || ''
+    });
+
+    // Generate JWT Token
+    const token = user.getSignedJwtToken();
+
+    res.status(201).json({
+        success: true,
+        message: 'Vendor Registration successful!',
+        data: {
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                phone: user.phone,
+                email: user.email,
+                role: user.role,
+                vendorProfile: {
+                    businessName: vendorProfile.businessName,
+                    interestedCategories: vendorProfile.interestedCategories,
+                    city: vendorProfile.city
+                }
+            }
+        }
+    });
+});
+
 module.exports = {
     sendOtp,
     verifyOtp,
@@ -401,5 +470,6 @@ module.exports = {
     forgotPassword,
     resetPassword,
     sendLoginOtp,
-    verifyLoginOtp
+    verifyLoginOtp,
+    registerVendor
 };

@@ -1,8 +1,8 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
-const { sendOtp, verifyOtp, checkUserExists, login, googleLogin, forgotPassword, resetPassword, sendLoginOtp, verifyLoginOtp } = require('../controllers/authController');
+const { sendOtp, verifyOtp, checkUserExists, login, googleLogin, forgotPassword, resetPassword, sendLoginOtp, verifyLoginOtp, registerVendor } = require('../controllers/authController');
 const validateRequest = require('../middleware/validateRequest');
-const { sendOtpSchema, verifyOtpSchema, checkUserSchema, loginSchema, googleLoginSchema, forgotPasswordSchema, resetPasswordSchema, sendLoginOtpSchema, verifyLoginOtpSchema } = require('../validations/authSchemas');
+const { sendOtpSchema, verifyOtpSchema, checkUserSchema, loginSchema, googleLoginSchema, forgotPasswordSchema, resetPasswordSchema, sendLoginOtpSchema, verifyLoginOtpSchema, registerVendorSchema } = require('../validations/authSchemas');
 
 const router = express.Router();
 
@@ -17,6 +17,7 @@ const otpLimiter = rateLimit({
 });
 
 // Auth Routes
+router.post('/register-vendor', validateRequest(registerVendorSchema), registerVendor);
 router.post('/login', validateRequest(loginSchema), login);
 router.post('/google-login', validateRequest(googleLoginSchema), googleLogin);
 router.post('/forgot-password', validateRequest(forgotPasswordSchema), forgotPassword);
