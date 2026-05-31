@@ -18,18 +18,15 @@ router.get('/marketplace', protect, authorize('VENDOR', 'CUSTOMER'), getMarketpl
 // Apply protection to all other crop routes
 router.use(protect);
 
-// Apply role authorization (only Farmers can add/view their own crops)
-router.use(authorize('FARMER'));
-
 router.route('/')
-  .post(validateRequest(addCropSchema), addCrop)
-  .get(getFarmerCrops);
+  .post(authorize('FARMER'), validateRequest(addCropSchema), addCrop)
+  .get(authorize('FARMER'), getFarmerCrops);
 
 router.route('/:id')
-  .get(getCropById)
-  .put(validateRequest(addCropSchema), updateCrop)
-  .delete(deleteCrop);
+  .get(authorize('FARMER', 'VENDOR', 'CUSTOMER'), getCropById)
+  .put(authorize('FARMER'), validateRequest(addCropSchema), updateCrop)
+  .delete(authorize('FARMER'), deleteCrop);
 
-router.patch('/:id/status', toggleCropStatus);
+router.patch('/:id/status', authorize('FARMER'), toggleCropStatus);
 
 module.exports = router;
