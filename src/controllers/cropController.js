@@ -173,11 +173,57 @@ const deleteCrop = asyncHandler(async (req, res) => {
     message: 'Crop deleted successfully'
   });
 });
+// @desc    Toggle crop status (Available / Sold Out)
+// @route   PATCH /api/crops/:id/status
+// @access  Private
+const toggleCropStatus = asyncHandler(async (req, res) => {
+  const crop = await Crop.findById(req.params.id);
+
+  if (!crop) {
+    return res.status(404).json({ success: false, error: 'Crop not found' });
+  }
+
+  // Ensure user owns the crop
+  if (crop.farmerId.toString() !== req.user.id) {
+    return res.status(403).json({ success: false, error: 'Not authorized to update this crop' });
+  }
+
+  crop.status = crop.status === 'Available' ? 'Sold Out' : 'Available';
+  await crop.save();
+
+  res.status(200).json({
+    success: true,
+    data: crop,
+    message: `Crop marked as ${crop.status}`
+  });
+});
+
+// @desc    Increment crop view count
+// @route   PATCH /api/crops/:id/view
+// @access  Public / Private
+const incrementCropView = asyncHandler(async (req, res) => {
+  const crop = await Crop.findByIdAndUpdate(
+    req.params.id,
+    { $inc: { views: 1 } },
+    { new: true }
+  );
+
+  if (!crop) {
+    return res.status(404).json({ success: false, error: 'Crop not found' });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: { views: crop.views }
+  });
+});
 
 module.exports = {
   addCrop,
   getFarmerCrops,
   getCropById,
   updateCrop,
-  deleteCrop
+  deleteCrop,
+  toggleCropStatus,
+  incrementCropView
 };

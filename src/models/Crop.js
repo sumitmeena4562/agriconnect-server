@@ -86,7 +86,11 @@ const cropSchema = new mongoose.Schema({
   },
   images: [{
     type: String // We will store Base64 strings or URLs here
-  }]
+  }],
+  views: {
+    type: Number,
+    default: 0
+  }
 }, { timestamps: true });
 
 // Index for faster queries
