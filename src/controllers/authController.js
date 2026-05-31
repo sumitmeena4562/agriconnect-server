@@ -2,7 +2,31 @@ const asyncHandler = require('../middleware/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const Otp = require('../models/Otp');
 const User = require('../models/User');
+const VendorProfile = require('../models/VendorProfile');
 const sendEmail = require('../utils/sendEmail');
+
+const getResponseUserObj = async (user) => {
+    const userObj = {
+        id: user._id,
+        name: user.name,
+        role: user.role,
+        phone: user.phone,
+        email: user.email
+    };
+    
+    if (user.role === 'VENDOR' || user.role === 'ADMIN') {
+        const profile = await VendorProfile.findOne({ user: user._id });
+        if (profile) {
+            userObj.vendorProfile = {
+                businessName: profile.businessName,
+                interestedCategories: profile.interestedCategories,
+                city: profile.city,
+                state: profile.state
+            };
+        }
+    }
+    return userObj;
+};
 
 // @route   POST /api/auth/send-otp
 // @desc    Generate a 6-digit OTP and send it via Email
@@ -141,17 +165,12 @@ const login = asyncHandler(async (req, res, next) => {
 
     // Create token
     const token = user.getSignedJwtToken();
+    const userResponse = await getResponseUserObj(user);
 
     res.status(200).json({
         success: true,
         token,
-        user: {
-            id: user._id,
-            name: user.name,
-            role: user.role,
-            phone: user.phone,
-            email: user.email
-        }
+        user: userResponse
     });
 });
 
@@ -180,17 +199,12 @@ const googleLogin = asyncHandler(async (req, res, next) => {
 
     // Create token
     const token = user.getSignedJwtToken();
+    const userResponse = await getResponseUserObj(user);
 
     res.status(200).json({
         success: true,
         token,
-        user: {
-            id: user._id,
-            name: user.name,
-            role: user.role,
-            phone: user.phone,
-            email: user.email
-        }
+        user: userResponse
     });
 });
 
@@ -378,21 +392,16 @@ const verifyLoginOtp = asyncHandler(async (req, res, next) => {
     await Otp.deleteMany({ email: user.email });
 
     const token = user.getSignedJwtToken();
+    const userResponse = await getResponseUserObj(user);
 
     res.status(200).json({
         success: true,
         token,
-        user: {
-            id: user._id,
-            name: user.name,
-            role: user.role,
-            phone: user.phone,
-            email: user.email
-        }
+        user: userResponse
     });
 });
 
-const VendorProfile = require('../models/VendorProfile');
+
 
 // @route   POST /api/auth/register-vendor
 // @desc    Register a new Vendor (Aggregator)
@@ -454,7 +463,8 @@ const registerVendor = asyncHandler(async (req, res, next) => {
                 vendorProfile: {
                     businessName: vendorProfile.businessName,
                     interestedCategories: vendorProfile.interestedCategories,
-                    city: vendorProfile.city
+                    city: vendorProfile.city,
+                    state: vendorProfile.state
                 }
             }
         }

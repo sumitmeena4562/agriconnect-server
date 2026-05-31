@@ -88,7 +88,7 @@ const getFarmerCrops = asyncHandler(async (req, res) => {
 // @route   GET /api/crops/:id
 // @access  Private
 const getCropById = asyncHandler(async (req, res) => {
-  const crop = await Crop.findById(req.params.id);
+  const crop = await Crop.findById(req.params.id).populate('farmerId', 'name phone location');
 
   if (!crop) {
     return res.status(404).json({
@@ -98,7 +98,7 @@ const getCropById = asyncHandler(async (req, res) => {
   }
 
   // If user is a farmer, they can only view their own crops
-  if (req.user.role === 'FARMER' && crop.farmerId.toString() !== req.user.id) {
+  if (req.user.role === 'FARMER' && crop.farmerId._id.toString() !== req.user.id) {
     return res.status(403).json({
       success: false,
       error: 'Not authorized to access this crop'
@@ -218,6 +218,55 @@ const incrementCropView = asyncHandler(async (req, res) => {
   });
 });
 
+// @desc    Get all crops for Marketplace (Vendor/Customer view)
+// @route   GET /api/crops/marketplace
+// @access  Private (Vendor/Customer)
+const getMarketplaceCrops = asyncHandler(async (req, res) => {
+  const { keyword, category, state, city, page = 1, limit = 10 } = req.query;
+
+  // Only show available crops
+  const query = { status: 'Available' };
+
+  if (keyword) {
+    query.name = { $regex: keyword, $options: 'i' };
+  }
+
+  if (category && category !== 'All') {
+    query.category = category;
+  }
+
+  // Location filtering (Exact match or regex)
+  if (state) {
+    query['location.state'] = { $regex: state, $options: 'i' };
+  }
+  if (city) {
+    query['location.city'] = { $regex: city, $options: 'i' };
+  }
+
+  // Pagination Math
+  const pageNum = parseInt(page, 10);
+  const limitNum = parseInt(limit, 10);
+  const skip = (pageNum - 1) * limitNum;
+
+  // Execute Query - Populate Farmer Info
+  const crops = await Crop.find(query)
+    .populate('farmerId', 'name phone location')
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limitNum);
+
+  const total = await Crop.countDocuments(query);
+
+  res.status(200).json({
+    success: true,
+    count: crops.length,
+    total,
+    totalPages: Math.ceil(total / limitNum),
+    currentPage: pageNum,
+    data: crops
+  });
+});
+
 module.exports = {
   addCrop,
   getFarmerCrops,
@@ -225,5 +274,6 @@ module.exports = {
   updateCrop,
   deleteCrop,
   toggleCropStatus,
-  incrementCropView
+  incrementCropView,
+  getMarketplaceCrops
 };

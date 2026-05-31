@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const errorHandler = require('./middleware/error');
 const connectDB = require('./config/db');
+const { requestLogger } = require('./middleware/logger');
 
 // Load env vars
 dotenv.config();
@@ -26,30 +27,18 @@ app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Centralized request tracing and logging middleware
+app.use(requestLogger);
+
 // Enable CORS
 app.use(cors());
-
-// Log HTTP Requests
-if (process.env.NODE_ENV === 'development') {
-    app.use(morgan('dev'));
-}
-
-// Custom Middleware to log Data (Payloads)
-app.use((req, res, next) => {
-    console.log(`\n--- [${req.method}] ${req.url} ---`.cyan);
-    if (req.body && Object.keys(req.body).length > 0) {
-        console.log("Incoming Data (req.body):".yellow);
-        console.log(req.body);
-    }
-    console.log("--------------------------\n".cyan);
-    next();
-});
 
 const path = require('path');
 const farmerRoutes = require('./routes/farmerRoutes');
 const authRoutes = require('./routes/authRoutes');
 const cropRoutes = require('./routes/cropRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const orderRoutes = require('./routes/orderRoutes');
 
 // Make the uploads folder statically available
 app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads')));
@@ -64,6 +53,7 @@ app.use('/api/farmers', farmerRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/crops', cropRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/orders', orderRoutes);
 
 // Error Handler Middleware (MUST be after routes)
 app.use(errorHandler);

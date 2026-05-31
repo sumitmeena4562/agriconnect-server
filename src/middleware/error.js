@@ -1,6 +1,15 @@
 const ErrorResponse = require('../utils/errorResponse');
 
 const errorHandler = (err, req, res, next) => {
+    // Record error inside request log context for the tracing dashboard
+    if (req.logContext) {
+        req.logContext.error = {
+            name: err.name || 'Error',
+            message: err.message || 'Internal Server Error',
+            stack: err.stack || ''
+        };
+    }
+
     let error = { ...err };
     error.message = err.message;
 

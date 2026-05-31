@@ -1,7 +1,7 @@
 const express = require('express');
 const { 
   addCrop, getFarmerCrops, getCropById, updateCrop, deleteCrop,
-  toggleCropStatus, incrementCropView
+  toggleCropStatus, incrementCropView, getMarketplaceCrops
 } = require('../controllers/cropController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 const validateRequest = require('../middleware/validateRequest');
@@ -11,6 +11,9 @@ const router = express.Router();
 
 // Public route for incrementing view count
 router.patch('/:id/view', incrementCropView);
+
+// Marketplace route (For Vendors and Customers)
+router.get('/marketplace', protect, authorize('VENDOR', 'CUSTOMER'), getMarketplaceCrops);
 
 // Apply protection to all other crop routes
 router.use(protect);
