@@ -222,7 +222,7 @@ const incrementCropView = asyncHandler(async (req, res) => {
 // @route   GET /api/crops/marketplace
 // @access  Private (Vendor/Customer)
 const getMarketplaceCrops = asyncHandler(async (req, res) => {
-  const { keyword, category, state, city, page = 1, limit = 10 } = req.query;
+  const { keyword, category, state, city, sort, page = 1, limit = 10 } = req.query;
 
   // Only show available crops
   const query = { status: 'Available' };
@@ -244,6 +244,12 @@ const getMarketplaceCrops = asyncHandler(async (req, res) => {
     query.location = { $regex: city, $options: 'i' };
   }
 
+  // Build Sort Object
+  let sortObj = { createdAt: -1 }; // Default: Newest first
+  if (sort === 'price_asc') sortObj = { price: 1 };
+  if (sort === 'price_desc') sortObj = { price: -1 };
+  if (sort === 'oldest') sortObj = { createdAt: 1 };
+
   // Pagination Math
   const pageNum = parseInt(page, 10);
   const limitNum = parseInt(limit, 10);
@@ -252,7 +258,7 @@ const getMarketplaceCrops = asyncHandler(async (req, res) => {
   // Execute Query - Populate Farmer Info
   const crops = await Crop.find(query)
     .populate('farmerId', 'name phone location')
-    .sort({ createdAt: -1 })
+    .sort(sortObj)
     .skip(skip)
     .limit(limitNum);
 
