@@ -9,8 +9,9 @@ const validateRequest = (schema) => {
         const result = schema.safeParse(req.body);
         
         if (!result.success) {
-            // Extract the first error message from Zod
-            const errorMessage = result.error.errors[0].message;
+            // Extract the first error message from Zod safely
+            const errors = result.error.issues || result.error.errors || [];
+            const errorMessage = errors[0]?.message || 'Invalid input data';
             return next(new ErrorResponse(errorMessage, 400));
         }
 

@@ -45,6 +45,45 @@ const cropSchema = new mongoose.Schema({
     trim: true,
     maxLength: 500
   },
+  variety: {
+    type: String,
+    trim: true
+  },
+  location: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  farmingMethod: {
+    type: String,
+    required: true,
+    enum: ['Organic', 'Conventional', 'Hydroponic']
+  },
+  qualityGrade: {
+    type: String,
+    required: true,
+    enum: ['Grade A', 'Grade B', 'Grade C']
+  },
+  minOrderQuantity: {
+    type: Number,
+    required: true,
+    min: 1
+  },
+  logisticsOption: {
+    type: String,
+    required: true,
+    enum: ['Self-Pickup', 'Transport Available']
+  },
+  availabilityStatus: {
+    type: String,
+    required: true,
+    enum: ['Ready to Dispatch', 'Pre-Booking']
+  },
+  paymentTerms: {
+    type: String,
+    required: true,
+    enum: ['100% Advance', '50% Advance', 'Cash on Delivery']
+  },
   images: [{
     type: String // We will store Base64 strings or URLs here
   }]

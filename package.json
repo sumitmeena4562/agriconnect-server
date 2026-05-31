@@ -22,6 +22,7 @@
   "homepage": "https://github.com/sumitmeena4562/agriconnect-server#readme",
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "cloudinary": "^1.41.3",
     "colors": "^1.4.0",
     "compression": "^1.8.1",
     "cors": "^2.8.6",
@@ -33,6 +34,8 @@
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.3.1",
     "morgan": "^1.10.1",
+    "multer": "^2.1.1",
+    "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^8.0.10",
     "zod": "^4.4.3"
   },

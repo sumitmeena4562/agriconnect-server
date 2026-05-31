@@ -38,6 +38,20 @@ const userSchema = new mongoose.Schema({
     isActive: {
         type: Boolean,
         default: true
+    },
+    location: {
+        type: String,
+        default: ''
+    },
+    bankDetails: {
+        accountName: { type: String, default: '' },
+        accountNumber: { type: String, default: '' },
+        ifscCode: { type: String, default: '' }
+    },
+    kycStatus: {
+        type: String,
+        enum: ['Pending', 'Approved', 'Rejected'],
+        default: 'Pending'
     }
 }, { timestamps: true });
 

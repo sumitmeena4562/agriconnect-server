@@ -22,8 +22,9 @@ app.use(helmet());
 // Compress all responses
 app.use(compression());
 
-// Body parser
-app.use(express.json());
+// Body parser (Increased limit to 50mb to allow Base64 image uploads)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Enable CORS
 app.use(cors());
@@ -44,9 +45,14 @@ app.use((req, res, next) => {
     next();
 });
 
+const path = require('path');
 const farmerRoutes = require('./routes/farmerRoutes');
 const authRoutes = require('./routes/authRoutes');
 const cropRoutes = require('./routes/cropRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
+
+// Make the uploads folder statically available
+app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads')));
 
 // Basic Route
 app.get('/', (req, res) => {
@@ -57,6 +63,7 @@ app.get('/', (req, res) => {
 app.use('/api/farmers', farmerRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/crops', cropRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // Error Handler Middleware (MUST be after routes)
 app.use(errorHandler);

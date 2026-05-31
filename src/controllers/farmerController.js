@@ -82,4 +82,62 @@ const registerFarmer = asyncHandler(async (req, res, next) => {
     });
 });
 
-module.exports = { registerFarmer };
+// @route   GET /api/farmers/profile
+// @desc    Get current farmer profile and user details
+// @access  Private
+const getProfile = asyncHandler(async (req, res, next) => {
+    const user = await User.findById(req.user.id).select('-password');
+    const profile = await FarmerProfile.findOne({ user: req.user.id });
+
+    if (!user) {
+        throw new ErrorResponse('User not found', 404);
+    }
+
+    res.status(200).json({
+        success: true,
+        data: {
+            user,
+            profile
+        }
+    });
+});
+
+// @route   PUT /api/farmers/profile
+// @desc    Update farmer user details, bank details and profile
+// @access  Private
+const updateProfile = asyncHandler(async (req, res, next) => {
+    const { name, bankDetails, location, farmDetails } = req.body;
+
+    // 1. Update User details
+    const userFields = {};
+    if (name) userFields.name = name;
+    if (bankDetails) userFields.bankDetails = bankDetails;
+
+    const user = await User.findByIdAndUpdate(
+        req.user.id,
+        { $set: userFields },
+        { new: true, runValidators: true }
+    ).select('-password');
+
+    // 2. Update Farmer Profile details
+    const profileFields = {};
+    if (location) profileFields.location = location;
+    if (farmDetails) profileFields.farmDetails = farmDetails;
+
+    const profile = await FarmerProfile.findOneAndUpdate(
+        { user: req.user.id },
+        { $set: profileFields },
+        { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+        success: true,
+        message: 'Profile updated successfully',
+        data: {
+            user,
+            profile
+        }
+    });
+});
+
+module.exports = { registerFarmer, getProfile, updateProfile };
