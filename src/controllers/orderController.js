@@ -114,9 +114,47 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Not authorized to update this order', 403);
     }
 
+    // State machine transitions validation
+    if (order.status === 'Rejected' || order.status === 'Cancelled' || order.status === 'Completed') {
+        throw new ErrorResponse(`Cannot update status of a ${order.status.toLowerCase()} order`, 400);
+    }
+
+    if (order.status === 'Accepted') {
+        if (status !== 'Completed') {
+            throw new ErrorResponse('Accepted orders can only be updated to Completed', 400);
+        }
+    }
+
+    if (order.status === 'Pending') {
+        if (!['Accepted', 'Rejected', 'Cancelled'].includes(status)) {
+            throw new ErrorResponse('Pending orders can only be Accepted, Rejected, or Cancelled', 400);
+        }
+    }
+
     // A Vendor can only Cancel. A Farmer can Accept/Reject/Complete.
     if (req.user.role === 'VENDOR' && status !== 'Cancelled') {
         throw new ErrorResponse('Vendors can only cancel an order', 400);
+    }
+
+    if (req.user.role === 'FARMER' && status === 'Cancelled') {
+        throw new ErrorResponse('Farmers cannot cancel an order', 400);
+    }
+
+    // If transitioned to Accepted, decrement available quantity from the Crop
+    if (status === 'Accepted' && order.status !== 'Accepted') {
+        const crop = await Crop.findById(order.crop);
+        if (!crop) {
+            throw new ErrorResponse('Associated crop not found', 404);
+        }
+        if (crop.quantity < order.requestedQuantity) {
+            throw new ErrorResponse(`Insufficient crop quantity. Only ${crop.quantity} ${crop.unit} available.`, 400);
+        }
+        
+        crop.quantity -= order.requestedQuantity;
+        if (crop.quantity === 0) {
+            crop.status = 'Sold Out';
+        }
+        await crop.save();
     }
 
     order.status = status;

@@ -1,6 +1,10 @@
 const Crop = require('../models/Crop');
 const asyncHandler = require('../middleware/asyncHandler');
 
+const escapeRegExp = (string) => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+};
+
 // @desc    Add a new crop
 // @route   POST /api/crops
 // @access  Private (Farmer only)
@@ -132,7 +136,21 @@ const updateCrop = asyncHandler(async (req, res) => {
     });
   }
 
-  crop = await Crop.findByIdAndUpdate(req.params.id, req.body, {
+  const allowedFields = [
+    'name', 'category', 'quantity', 'unit', 'price', 'status',
+    'harvestDate', 'description', 'variety', 'location', 'farmingMethod',
+    'qualityGrade', 'minOrderQuantity', 'logisticsOption', 'availabilityStatus',
+    'paymentTerms', 'images'
+  ];
+
+  const updateData = {};
+  allowedFields.forEach(field => {
+    if (req.body[field] !== undefined) {
+      updateData[field] = req.body[field];
+    }
+  });
+
+  crop = await Crop.findByIdAndUpdate(req.params.id, updateData, {
     new: true,
     runValidators: true
   });
@@ -228,7 +246,7 @@ const getMarketplaceCrops = asyncHandler(async (req, res) => {
   const query = { status: 'Available' };
 
   if (keyword) {
-    query.name = { $regex: keyword, $options: 'i' };
+    query.name = { $regex: escapeRegExp(keyword), $options: 'i' };
   }
 
   if (category && category !== 'All') {
@@ -237,11 +255,13 @@ const getMarketplaceCrops = asyncHandler(async (req, res) => {
 
   // Location filtering (Regex match on the string)
   if (state && city) {
-    query.location = { $regex: `(?=.*${state})(?=.*${city})`, $options: 'i' };
+    const escapedState = escapeRegExp(state);
+    const escapedCity = escapeRegExp(city);
+    query.location = { $regex: `(?=.*${escapedState})(?=.*${escapedCity})`, $options: 'i' };
   } else if (state) {
-    query.location = { $regex: state, $options: 'i' };
+    query.location = { $regex: escapeRegExp(state), $options: 'i' };
   } else if (city) {
-    query.location = { $regex: city, $options: 'i' };
+    query.location = { $regex: escapeRegExp(city), $options: 'i' };
   }
 
   // Build Sort Object
