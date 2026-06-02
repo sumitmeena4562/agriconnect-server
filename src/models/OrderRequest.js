@@ -27,6 +27,20 @@ const orderRequestSchema = new mongoose.Schema({
         type: String, // Additional notes from vendor
         default: ''
     },
+    pickupDate: {
+        type: Date
+    },
+    vehicleNumber: {
+        type: String,
+        default: ''
+    },
+    deliveryNotes: {
+        type: String,
+        default: ''
+    },
+    deliveryOTP: {
+        type: String
+    },
     status: {
         type: String,
         enum: ['Pending', 'Accepted', 'Rejected', 'Completed', 'Cancelled'],

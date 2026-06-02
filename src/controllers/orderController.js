@@ -7,7 +7,7 @@ const ErrorResponse = require('../utils/errorResponse');
 // @route   POST /api/orders
 // @access  Private (Vendor only)
 const createOrderRequest = asyncHandler(async (req, res) => {
-    const { cropId, requestedQuantity, offeredPrice, message } = req.body;
+    const { cropId, requestedQuantity, offeredPrice, message, pickupDate, vehicleNumber, deliveryNotes } = req.body;
 
     const crop = await Crop.findById(cropId);
     if (!crop) {
@@ -43,7 +43,10 @@ const createOrderRequest = asyncHandler(async (req, res) => {
         vendor: req.user.id,
         requestedQuantity,
         offeredPrice: offeredPrice || crop.price,
-        message
+        message,
+        pickupDate,
+        vehicleNumber,
+        deliveryNotes
     });
 
     // Populate for response
@@ -143,7 +146,19 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Farmers cannot cancel an order', 400);
     }
 
-    // If transitioned to Accepted, decrement available quantity from the Crop
+    // If transitioned to Completed, verify delivery OTP
+    if (status === 'Completed') {
+        const { otp } = req.body;
+        if (!otp) {
+            throw new ErrorResponse('Delivery verification OTP is required to complete the order', 400);
+        }
+        const expectedOTP = order.deliveryOTP || '0000';
+        if (expectedOTP !== otp.toString().trim()) {
+            throw new ErrorResponse('Invalid delivery verification OTP. Please verify with the vendor.', 400);
+        }
+    }
+
+    // If transitioned to Accepted, decrement available quantity from the Crop and generate OTP
     if (status === 'Accepted' && order.status !== 'Accepted') {
         const crop = await Crop.findOneAndUpdate(
             { _id: order.crop, quantity: { $gte: order.requestedQuantity } },
@@ -164,14 +179,14 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
             crop.status = 'Sold Out';
             await crop.save();
         }
+
+        // Generate 4-digit OTP for delivery verification
+        const otp = Math.floor(1000 + Math.random() * 9000).toString();
+        order.deliveryOTP = otp;
     }
 
     order.status = status;
     await order.save();
-
-    // If Accepted, we might want to decrease available quantity from Crop?
-    // Usually, we only decrease it when Completed, or we set crop status to 'Sold Out' if quantity reaches 0.
-    // For now, just updating the request status.
 
     res.status(200).json({
         success: true,

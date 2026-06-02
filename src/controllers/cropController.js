@@ -51,7 +51,37 @@ const getFarmerCrops = asyncHandler(async (req, res) => {
   const query = { farmerId: req.user.id };
 
   if (keyword) {
-    query.name = { $regex: keyword, $options: 'i' };
+    const cleanKeyword = keyword.replace('#', '').trim();
+    const escapedKeyword = escapeRegExp(cleanKeyword);
+    const orConditions = [
+      { name: { $regex: escapedKeyword, $options: 'i' } },
+      { variety: { $regex: escapedKeyword, $options: 'i' } }
+    ];
+
+    const mongoose = require('mongoose');
+    // If it's a valid 24-character ObjectId
+    if (mongoose.Types.ObjectId.isValid(cleanKeyword)) {
+      orConditions.push({ _id: cleanKeyword });
+
+      const OrderRequest = require('../models/OrderRequest');
+      const order = await OrderRequest.findById(cleanKeyword);
+      if (order && order.crop) {
+        orConditions.push({ _id: order.crop });
+      }
+    } 
+    // If it's a short 6-character hex suffix (Order ID)
+    else if (/^[0-9a-fA-F]{6}$/.test(cleanKeyword)) {
+      const OrderRequest = require('../models/OrderRequest');
+      const allOrders = await OrderRequest.find({});
+      const matchingOrders = allOrders.filter(o => o._id.toString().endsWith(cleanKeyword.toLowerCase()));
+      if (matchingOrders.length > 0) {
+        matchingOrders.forEach(o => {
+          if (o.crop) orConditions.push({ _id: o.crop });
+        });
+      }
+    }
+
+    query.$or = orConditions;
   }
 
   if (category && category !== 'All') {
@@ -246,7 +276,37 @@ const getMarketplaceCrops = asyncHandler(async (req, res) => {
   const query = { status: 'Available' };
 
   if (keyword) {
-    query.name = { $regex: escapeRegExp(keyword), $options: 'i' };
+    const cleanKeyword = keyword.replace('#', '').trim();
+    const escapedKeyword = escapeRegExp(cleanKeyword);
+    const orConditions = [
+      { name: { $regex: escapedKeyword, $options: 'i' } },
+      { variety: { $regex: escapedKeyword, $options: 'i' } }
+    ];
+
+    const mongoose = require('mongoose');
+    // If it's a valid 24-character ObjectId
+    if (mongoose.Types.ObjectId.isValid(cleanKeyword)) {
+      orConditions.push({ _id: cleanKeyword });
+
+      const OrderRequest = require('../models/OrderRequest');
+      const order = await OrderRequest.findById(cleanKeyword);
+      if (order && order.crop) {
+        orConditions.push({ _id: order.crop });
+      }
+    } 
+    // If it's a short 6-character hex suffix (Order ID)
+    else if (/^[0-9a-fA-F]{6}$/.test(cleanKeyword)) {
+      const OrderRequest = require('../models/OrderRequest');
+      const allOrders = await OrderRequest.find({});
+      const matchingOrders = allOrders.filter(o => o._id.toString().endsWith(cleanKeyword.toLowerCase()));
+      if (matchingOrders.length > 0) {
+        matchingOrders.forEach(o => {
+          if (o.crop) orConditions.push({ _id: o.crop });
+        });
+      }
+    }
+
+    query.$or = orConditions;
   }
 
   if (category && category !== 'All') {
