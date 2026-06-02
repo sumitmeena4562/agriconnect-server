@@ -63,10 +63,13 @@ const createOrderRequest = asyncHandler(async (req, res) => {
 const getOrders = asyncHandler(async (req, res) => {
     let query = {};
 
-    // If Farmer, show requests received. If Vendor, show requests sent.
+    // If Farmer, show requests received. If Vendor/Customer, show requests sent.
     if (req.user.role === 'FARMER') {
         query.farmer = req.user.id;
-    } else if (req.user.role === 'VENDOR') {
+    } else if (['VENDOR', 'CUSTOMER'].includes(req.user.role)) {
+        query.vendor = req.user.id;
+    } else {
+        // Safe default: restrict to user's own vendor ID to prevent leaking all system orders
         query.vendor = req.user.id;
     }
 
@@ -110,7 +113,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Not authorized to update this order', 403);
     }
 
-    if (req.user.role === 'VENDOR' && order.vendor.toString() !== req.user.id) {
+    if (['VENDOR', 'CUSTOMER'].includes(req.user.role) && order.vendor.toString() !== req.user.id) {
         throw new ErrorResponse('Not authorized to update this order', 403);
     }
 
@@ -131,9 +134,9 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         }
     }
 
-    // A Vendor can only Cancel. A Farmer can Accept/Reject/Complete.
-    if (req.user.role === 'VENDOR' && status !== 'Cancelled') {
-        throw new ErrorResponse('Vendors can only cancel an order', 400);
+    // A Buyer (Vendor or Customer) can only Cancel. A Farmer can Accept/Reject/Complete.
+    if (['VENDOR', 'CUSTOMER'].includes(req.user.role) && status !== 'Cancelled') {
+        throw new ErrorResponse('Buyers can only cancel an order', 400);
     }
 
     if (req.user.role === 'FARMER' && status === 'Cancelled') {
@@ -142,19 +145,25 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 
     // If transitioned to Accepted, decrement available quantity from the Crop
     if (status === 'Accepted' && order.status !== 'Accepted') {
-        const crop = await Crop.findById(order.crop);
+        const crop = await Crop.findOneAndUpdate(
+            { _id: order.crop, quantity: { $gte: order.requestedQuantity } },
+            { $inc: { quantity: -order.requestedQuantity } },
+            { new: true }
+        );
+
         if (!crop) {
-            throw new ErrorResponse('Associated crop not found', 404);
+            // Either the crop is not found, or quantity is insufficient
+            const existingCrop = await Crop.findById(order.crop);
+            if (!existingCrop) {
+                throw new ErrorResponse('Associated crop not found', 404);
+            }
+            throw new ErrorResponse(`Insufficient crop quantity. Only ${existingCrop.quantity} ${existingCrop.unit} available.`, 400);
         }
-        if (crop.quantity < order.requestedQuantity) {
-            throw new ErrorResponse(`Insufficient crop quantity. Only ${crop.quantity} ${crop.unit} available.`, 400);
-        }
-        
-        crop.quantity -= order.requestedQuantity;
+
         if (crop.quantity === 0) {
             crop.status = 'Sold Out';
+            await crop.save();
         }
-        await crop.save();
     }
 
     order.status = status;
