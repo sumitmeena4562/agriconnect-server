@@ -39,6 +39,7 @@ const authRoutes = require('./routes/authRoutes');
 const cropRoutes = require('./routes/cropRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const orderRoutes = require('./routes/orderRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 // Make the uploads folder statically available
 app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads')));
@@ -54,6 +55,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/crops', cropRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Error Handler Middleware (MUST be after routes)
 app.use(errorHandler);

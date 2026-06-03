@@ -2,6 +2,8 @@ const OrderRequest = require('../models/OrderRequest');
 const Crop = require('../models/Crop');
 const asyncHandler = require('../middleware/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
+const User = require('../models/User');
+const { createNotification } = require('./notificationController');
 
 // @desc    Send an order request to a farmer
 // @route   POST /api/orders
@@ -52,6 +54,16 @@ const createOrderRequest = asyncHandler(async (req, res) => {
     // Populate for response
     await orderRequest.populate('crop', 'name category price unit images');
     await orderRequest.populate('farmer', 'name phone location');
+
+    const vendorUser = await User.findById(req.user.id);
+    const vendorName = vendorUser ? vendorUser.name : 'Vendor';
+    await createNotification(
+        crop.farmerId,
+        req.user.id,
+        orderRequest._id,
+        'ORDER_RECEIVED',
+        `New order request! ${vendorName} has sent you a request for ${requestedQuantity} ${crop.unit} of ${crop.name}.`
+    );
 
     res.status(201).json({
         success: true,
@@ -152,8 +164,10 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         if (!otp) {
             throw new ErrorResponse('Delivery verification OTP is required to complete the order', 400);
         }
-        const expectedOTP = order.deliveryOTP || '0000';
-        if (expectedOTP !== otp.toString().trim()) {
+        if (!order.deliveryOTP) {
+            throw new ErrorResponse('Delivery OTP not found for this order. Please contact support.', 500);
+        }
+        if (order.deliveryOTP !== otp.toString().trim()) {
             throw new ErrorResponse('Invalid delivery verification OTP. Please verify with the vendor.', 400);
         }
     }
@@ -187,6 +201,59 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 
     order.status = status;
     await order.save();
+
+    // Fetch current user name once (instead of per-branch)
+    const currentUser = await User.findById(req.user.id).select('name');
+    const currentUserName = currentUser ? currentUser.name : (req.user.role === 'FARMER' ? 'Farmer' : 'Vendor');
+
+    // Trigger notification based on status transitions
+    if (status === 'Accepted') {
+        await createNotification(
+            order.vendor,
+            req.user.id,
+            order._id,
+            'ORDER_ACCEPTED',
+            `Your order has been accepted! Farmer ${currentUserName} has accepted your order. Click to check pickup OTP details.`
+        );
+    } else if (status === 'Rejected') {
+        await createNotification(
+            order.vendor,
+            req.user.id,
+            order._id,
+            'ORDER_REJECTED',
+            `Order request rejected. Farmer ${currentUserName} has rejected your order.`
+        );
+    } else if (status === 'Completed') {
+        // Load crop for correct unit label
+        const cropData = await Crop.findById(order.crop).select('name unit');
+        const unitLabel = cropData ? cropData.unit : 'units';
+        const cropName = cropData ? cropData.name : 'crop';
+
+        // Notify vendor
+        await createNotification(
+            order.vendor,
+            req.user.id,
+            order._id,
+            'ORDER_COMPLETED',
+            `Your order is completed! The transaction for ${order.requestedQuantity} ${unitLabel} of ${cropName} has been successfully completed.`
+        );
+        // Notify farmer (confirmation)
+        await createNotification(
+            order.farmer,
+            order.vendor,
+            order._id,
+            'ORDER_COMPLETED',
+            `Order delivered! You have successfully handed over ${order.requestedQuantity} ${unitLabel} of ${cropName}. Transaction verified.`
+        );
+    } else if (status === 'Cancelled') {
+        await createNotification(
+            order.farmer,
+            req.user.id,
+            order._id,
+            'ORDER_CANCELLED',
+            `Order request cancelled! Vendor ${currentUserName} has cancelled the pending order request.`
+        );
+    }
 
     res.status(200).json({
         success: true,

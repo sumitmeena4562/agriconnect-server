@@ -48,5 +48,9 @@ const orderRequestSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
+orderRequestSchema.index({ farmer: 1, createdAt: -1 });
+orderRequestSchema.index({ vendor: 1, createdAt: -1 });
+orderRequestSchema.index({ crop: 1, vendor: 1, status: 1 });
+
 const OrderRequest = mongoose.model('OrderRequest', orderRequestSchema);
 module.exports = OrderRequest;
