@@ -21,11 +21,11 @@ const SENSITIVE_FIELDS = [
  */
 const recursiveMask = (data) => {
   if (data === null || data === undefined) return data;
-  
+
   if (Array.isArray(data)) {
     return data.map(recursiveMask);
   }
-  
+
   if (typeof data === 'object') {
     const masked = {};
     for (const [key, value] of Object.entries(data)) {
@@ -33,13 +33,21 @@ const recursiveMask = (data) => {
         masked[key] = '********';
       } else if (typeof value === 'object') {
         masked[key] = recursiveMask(value);
+      } else if (typeof value === 'string' && value.length > 200) {
+        if (value.startsWith('data:') || value.includes(';base64,') || /^[A-Za-z0-9+/=]{50,}$/.test(value.substring(0, 100))) {
+          masked[key] = value.substring(0, 50) + `... [Truncated Base64 Data, length: ${value.length}]`;
+        } else if (value.length > 1000) {
+          masked[key] = value.substring(0, 200) + `... [Truncated Long Text, length: ${value.length}]`;
+        } else {
+          masked[key] = value;
+        }
       } else {
         masked[key] = value;
       }
     }
     return masked;
   }
-  
+
   return data;
 };
 
@@ -49,7 +57,7 @@ const recursiveMask = (data) => {
  */
 const maskSensitiveData = (data) => {
   if (data === null || data === undefined) return data;
-  
+
   try {
     // Convert to plain JSON to strip complex class prototypes, buffers, and circular references
     const plainData = JSON.parse(JSON.stringify(data));
@@ -111,7 +119,7 @@ const traceLogic = (req, type, message, status) => {
 const requestLogger = (req, res, next) => {
   const reqId = crypto.randomBytes(4).toString('hex').toUpperCase();
   const startTime = process.hrtime();
-  
+
   const logContext = {
     id: reqId,
     startTime,
@@ -135,9 +143,9 @@ const requestLogger = (req, res, next) => {
     error: null,
     response: null
   };
-  
+
   req.logContext = logContext;
-  
+
   // Custom log method for developer convenience
   req.logStep = (message) => {
     traceLogic(req, 'Custom Step', message, 'Info');
@@ -164,7 +172,7 @@ const requestLogger = (req, res, next) => {
         body: responseData
       };
     }
-    
+
     return originalSend.apply(this, arguments);
   };
 
@@ -186,11 +194,11 @@ const requestLogger = (req, res, next) => {
   res.on('finish', () => {
     const diff = process.hrtime(startTime);
     const totalTimeMs = diff[0] * 1000 + diff[1] / 1000000;
-    
+
     const dbTimeMs = logContext.database.reduce((acc, q) => acc + (q.durationMs || 0), 0);
     const controllerTimeMs = logContext.controller ? (logContext.controller.durationMs || 0) : 0;
     const memUsage = process.memoryUsage();
-    
+
     logContext.performance = {
       dbTime: `${dbTimeMs.toFixed(2)}ms`,
       controllerTime: `${controllerTimeMs.toFixed(2)}ms`,
@@ -216,9 +224,9 @@ const requestLogger = (req, res, next) => {
  */
 function printRequestFlow(ctx) {
   const line = (str) => console.log(str);
-  
+
   line('\n' + `🌳 REQUEST FLOW [${ctx.id}]`.green.bold);
-  
+
   // CLIENT SECTION
   line(`├── 📥 CLIENT`.cyan);
   line(`│   ├── Method: `.cyan + `${ctx.client.method}`.yellow.bold);
@@ -227,6 +235,7 @@ function printRequestFlow(ctx) {
   line(`│   ├── User Agent: `.cyan + `${ctx.client.userAgent}`.white);
   line(`│   └── Timestamp: `.cyan + `${ctx.client.timestamp}`.white);
   line(`│`);
+
 
   // REQUEST DATA SECTION
   line(`├── 📦 REQUEST DATA`.yellow);
@@ -289,19 +298,19 @@ function printRequestFlow(ctx) {
       const duration = db.durationMs ? ` (${db.durationMs.toFixed(2)}ms)` : '';
       line(`│   ├── [OP ${idx + 1}] `.cyan + `${db.collection}.${db.operation}`.yellow.bold + duration);
       line(`│   │   ├── Query: `.cyan + prettyJSON(db.query, 12).white);
-      
+
       if (db.data) {
         line(`│   │   ├── Data Sent: `.cyan + prettyJSON(db.data, 12).white);
       }
-      
+
       if (db.docBefore) {
         line(`│   │   ├── Document Before: `.cyan + prettyJSON(db.docBefore, 12).gray);
       }
-      
+
       if (db.docAfter) {
         line(`│   │   ├── Document After: `.cyan + prettyJSON(db.docAfter, 12).green);
       }
-      
+
       const char = isLast ? '└──' : '├──';
       line(`│   │   ${char} Response: `.cyan + prettyJSON(db.response, 12).white);
       if (!isLast) line(`│   │`);
@@ -315,7 +324,7 @@ function printRequestFlow(ctx) {
   const responseColor = status >= 200 && status < 300 ? statusStr.green.bold : statusStr.red.bold;
   const successStr = ctx.response && ctx.response.success ? 'Success'.green.bold : 'Failure'.red.bold;
   const sizeKb = ctx.response ? (ctx.response.sizeBytes / 1024).toFixed(2) : '0.00';
-  
+
   line(`├── 📤 RESPONSE`.magenta);
   line(`│   ├── HTTP Status Code: `.magenta + responseColor);
   line(`│   ├── Success/Failure: `.magenta + successStr);
