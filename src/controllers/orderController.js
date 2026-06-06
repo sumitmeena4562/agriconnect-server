@@ -184,7 +184,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Farmers cannot cancel an order', 400);
     }
 
-    // If transitioned to Completed, verify delivery OTP
+    // If transitioned to Completed, verify delivery OTP and payment verification
     if (status === 'Completed') {
         const { otp } = req.body;
         if (!otp) {
@@ -195,6 +195,9 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         }
         if (order.deliveryOTP !== otp.toString().trim()) {
             throw new ErrorResponse('Invalid delivery verification OTP. Please verify with the vendor.', 400);
+        }
+        if (!order.payment || order.payment.status !== 'Verified') {
+            throw new ErrorResponse('Payment must be verified by the farmer before the order can be completed', 400);
         }
     }
 
@@ -223,10 +226,52 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         // Generate 4-digit OTP for delivery verification
         const otp = Math.floor(1000 + Math.random() * 9000).toString();
         order.deliveryOTP = otp;
+
+        // Auto-verify if Cash on Delivery (COD)
+        if (crop.paymentTerms === 'Cash on Delivery') {
+            order.payment = {
+                amount: 0,
+                method: 'Cash',
+                upiRef: '',
+                status: 'Verified',
+                note: 'Cash on Delivery - no advance required',
+                verifiedAt: new Date()
+            };
+        }
     }
 
     order.status = status;
     await order.save();
+
+    // Log offline cash ledger entries upon completion
+    if (status === 'Completed') {
+        const crop = await Crop.findById(order.crop);
+        if (crop) {
+            const totalCost = order.requestedQuantity * order.offeredPrice;
+            if (crop.paymentTerms === 'Cash on Delivery') {
+                await BankTransaction.create({
+                    sender: order.vendor,
+                    receiver: order.farmer,
+                    order: order._id,
+                    amount: totalCost,
+                    type: 'PAYMENT',
+                    status: 'Completed',
+                    description: `Cash on Delivery (Offline) for order #${order._id.toString().slice(-6).toUpperCase()}`
+                });
+            } else if (crop.paymentTerms === '50% Advance') {
+                const remainingAmount = 0.5 * totalCost;
+                await BankTransaction.create({
+                    sender: order.vendor,
+                    receiver: order.farmer,
+                    order: order._id,
+                    amount: remainingAmount,
+                    type: 'PAYMENT',
+                    status: 'Completed',
+                    description: `Offline Cash Payment (Remaining 50%) for order #${order._id.toString().slice(-6).toUpperCase()}`
+                });
+            }
+        }
+    }
 
     // Broadcast order status changes in real-time
     await order.populate([
@@ -330,7 +375,20 @@ const submitPayment = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Payment already verified by farmer', 400);
     }
 
-    const amount = order.requestedQuantity * order.offeredPrice;
+    const crop = await Crop.findById(order.crop);
+    if (!crop) {
+        throw new ErrorResponse('Associated crop not found', 404);
+    }
+
+    if (crop.paymentTerms === 'Cash on Delivery') {
+        throw new ErrorResponse('This order is Cash on Delivery, no advance payment needed', 400);
+    }
+
+    const totalAmount = order.requestedQuantity * order.offeredPrice;
+    let amount = totalAmount;
+    if (crop.paymentTerms === '50% Advance') {
+        amount = 0.5 * totalAmount;
+    }
 
     // Fetch or create Vendor's bank account
     let vendorAccount = await MockBankAccount.findOne({ user: req.user.id });
