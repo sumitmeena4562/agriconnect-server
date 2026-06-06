@@ -107,6 +107,29 @@ const verifyLoginOtpSchema = z.object({
     otp: z.string().length(6, 'OTP must be exactly 6 digits')
 });
 
+// Schema for PUT /api/v1/farmers/profile
+const updateFarmerProfileSchema = z.object({
+    name: z.string().min(3, 'Name must be at least 3 characters').optional(),
+    bankDetails: z.object({
+        accountName:   z.string().max(100).optional(),
+        accountNumber: z.string().max(30).optional(),
+        ifscCode:      z.string().max(20).optional(),
+    }).optional(),
+    location: z.object({
+        state:    z.string().min(2, 'State is required').optional(),
+        district: z.string().min(2, 'District is required').optional(),
+        village:  z.string().optional(),
+    }).optional(),
+    farmDetails: z.object({
+        landSize:   z.union([z.string(), z.number()]).transform(v => parseFloat(v)).refine(v => !isNaN(v) && v > 0, { message: 'Land size must be positive' }).optional(),
+        landUnit:   z.string().optional(),
+        crops:      z.string().optional(),
+        irrigation: z.string().optional(),
+    }).optional(),
+}).refine(data => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided for update'
+});
+
 module.exports = {
     sendOtpSchema,
     verifyOtpSchema,
@@ -118,5 +141,6 @@ module.exports = {
     forgotPasswordSchema,
     resetPasswordSchema,
     sendLoginOtpSchema,
-    verifyLoginOtpSchema
+    verifyLoginOtpSchema,
+    updateFarmerProfileSchema,
 };

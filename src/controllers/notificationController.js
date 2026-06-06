@@ -107,10 +107,22 @@ const deleteReadNotifications = asyncHandler(async (req, res) => {
     });
 });
 
+// @desc    Get unread notifications count
+// @route   GET /api/notifications/unread-count
+// @access  Private
+const getUnreadCount = asyncHandler(async (req, res) => {
+    const count = await Notification.countDocuments({ recipient: req.user.id, read: false });
+    res.status(200).json({
+        success: true,
+        count
+    });
+});
+
 module.exports = {
     getNotifications,
     markAllRead,
     markRead,
     createNotification,
-    deleteReadNotifications
+    deleteReadNotifications,
+    getUnreadCount
 };

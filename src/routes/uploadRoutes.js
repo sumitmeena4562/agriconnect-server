@@ -3,6 +3,7 @@ const multer = require('multer');
 const { v2: cloudinary } = require('cloudinary');
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const path = require('path');
+const { protect } = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
@@ -31,7 +32,7 @@ const upload = multer({
 // @route   POST /api/upload
 // @desc    Upload multiple images to Cloudinary (max 4)
 // @access  Private
-router.post('/', upload.array('images', 4), (req, res) => {
+router.post('/', protect, upload.array('images', 4), (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ success: false, error: 'No files were uploaded.' });

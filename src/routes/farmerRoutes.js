@@ -1,7 +1,7 @@
 const express = require('express');
 const { registerFarmer, getProfile, updateProfile } = require('../controllers/farmerController');
 const validateRequest = require('../middleware/validateRequest');
-const { registerFarmerSchema } = require('../validations/authSchemas');
+const { registerFarmerSchema, updateFarmerProfileSchema } = require('../validations/authSchemas');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -16,6 +16,6 @@ router.get('/profile', protect, authorize('FARMER'), getProfile);
 
 // @route   PUT /api/farmers/profile
 // @desc    Update current farmer profile
-router.put('/profile', protect, authorize('FARMER'), updateProfile);
+router.put('/profile', protect, authorize('FARMER'), validateRequest(updateFarmerProfileSchema), updateProfile);
 
 module.exports = router;

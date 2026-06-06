@@ -25,6 +25,11 @@ const addCropSchema = z.object({
   images: z.array(z.string()).max(4, "You can upload a maximum of 4 images").optional()
 });
 
+// Partial schema for PUT /:id — all fields optional to allow partial updates
+const updateCropSchema = addCropSchema.partial();
+
 module.exports = {
-  addCropSchema
+  addCropSchema,
+  updateCropSchema,
 };
+

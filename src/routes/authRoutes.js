@@ -28,6 +28,6 @@ router.post('/login-otp/verify', otpLimiter, validateRequest(verifyLoginOtpSchem
 
 router.post('/send-otp', otpLimiter, validateRequest(sendOtpSchema), sendOtp);
 router.post('/verify-otp', otpLimiter, validateRequest(verifyOtpSchema), verifyOtp);
-router.post('/check-user', validateRequest(checkUserSchema), checkUserExists);
+router.post('/check-user', otpLimiter, validateRequest(checkUserSchema), checkUserExists);
 
 module.exports = router;

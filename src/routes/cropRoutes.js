@@ -5,12 +5,12 @@ const {
 } = require('../controllers/cropController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 const validateRequest = require('../middleware/validateRequest');
-const { addCropSchema } = require('../validations/cropSchemas');
+const { addCropSchema, updateCropSchema } = require('../validations/cropSchemas');
 
 const router = express.Router();
 
-// Public route for incrementing view count
-router.patch('/:id/view', incrementCropView);
+// Route for incrementing view count (auth protected)
+router.patch('/:id/view', protect, incrementCropView);
 
 // Marketplace route (For Vendors and Customers)
 router.get('/marketplace', protect, authorize('VENDOR', 'CUSTOMER'), getMarketplaceCrops);
@@ -24,7 +24,7 @@ router.route('/')
 
 router.route('/:id')
   .get(authorize('FARMER', 'VENDOR', 'CUSTOMER'), getCropById)
-  .put(authorize('FARMER'), validateRequest(addCropSchema), updateCrop)
+  .put(authorize('FARMER'), validateRequest(updateCropSchema), updateCrop)
   .delete(authorize('FARMER'), deleteCrop);
 
 router.patch('/:id/status', authorize('FARMER'), toggleCropStatus);
