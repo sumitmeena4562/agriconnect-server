@@ -19,7 +19,7 @@ const protect = (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secretkey123');
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded; // { id, role, iat, exp }
     traceMiddlewareEnd(req, 'protect', 'Passed');
     traceLogic(req, 'Authentication', `Token verified successfully. User: ${decoded.id} (Role: ${decoded.role})`, 'Passed');

@@ -3,7 +3,9 @@ const router = express.Router();
 const { 
     createOrderRequest, 
     getOrders, 
-    updateOrderStatus 
+    updateOrderStatus,
+    submitPayment,
+    verifyPayment,
 } = require('../controllers/orderController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
@@ -16,4 +18,9 @@ router.route('/')
 
 router.patch('/:id/status', updateOrderStatus);
 
+// Payment routes
+router.patch('/:id/payment',        authorize('VENDOR', 'CUSTOMER'), submitPayment);
+router.patch('/:id/payment/verify', authorize('FARMER'),             verifyPayment);
+
 module.exports = router;
+

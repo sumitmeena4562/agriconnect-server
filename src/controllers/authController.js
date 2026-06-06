@@ -220,7 +220,11 @@ const forgotPassword = asyncHandler(async (req, res, next) => {
     const user = await User.findOne(query);
 
     if (!user) {
-        throw new ErrorResponse('User not found. Please check your details.', 404);
+        // Return generic message to prevent user enumeration (don't reveal if email/phone is registered)
+        return res.status(200).json({
+            success: true,
+            message: 'If an account with these details exists, an OTP has been sent.'
+        });
     }
 
     if (user.authProvider === 'GOOGLE') {

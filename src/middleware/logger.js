@@ -21,11 +21,11 @@ const SENSITIVE_FIELDS = [
  */
 const recursiveMask = (data) => {
   if (data === null || data === undefined) return data;
-
+  
   if (Array.isArray(data)) {
     return data.map(recursiveMask);
   }
-
+  
   if (typeof data === 'object') {
     const masked = {};
     for (const [key, value] of Object.entries(data)) {
@@ -33,13 +33,11 @@ const recursiveMask = (data) => {
         masked[key] = '********';
       } else if (typeof value === 'object') {
         masked[key] = recursiveMask(value);
-      } else if (typeof value === 'string' && value.length > 200) {
-        if (value.startsWith('data:') || value.includes(';base64,') || /^[A-Za-z0-9+/=]{50,}$/.test(value.substring(0, 100))) {
+      } else if (typeof value === 'string' && value.length > 500) {
+        if (value.startsWith('data:') || value.includes(';base64,') || /^[A-Za-z0-9+/=\s\r\n]{50,}$/.test(value.substring(0, 100))) {
           masked[key] = value.substring(0, 50) + `... [Truncated Base64 Data, length: ${value.length}]`;
-        } else if (value.length > 1000) {
-          masked[key] = value.substring(0, 200) + `... [Truncated Long Text, length: ${value.length}]`;
         } else {
-          masked[key] = value;
+          masked[key] = value.substring(0, 150) + `... [Truncated Long Text, length: ${value.length}]`;
         }
       } else {
         masked[key] = value;
@@ -47,7 +45,14 @@ const recursiveMask = (data) => {
     }
     return masked;
   }
-
+  
+  if (typeof data === 'string' && data.length > 500) {
+    if (data.startsWith('data:') || data.includes(';base64,') || /^[A-Za-z0-9+/=\s\r\n]{50,}$/.test(data.substring(0, 100))) {
+      return data.substring(0, 50) + `... [Truncated Base64 Data, length: ${data.length}]`;
+    }
+    return data.substring(0, 150) + `... [Truncated Long Text, length: ${data.length}]`;
+  }
+  
   return data;
 };
 

@@ -72,7 +72,7 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
 
 // Generate and hash password token
 userSchema.methods.getSignedJwtToken = function () {
-    return jwt.sign({ id: this._id, role: this.role }, process.env.JWT_SECRET || 'secretkey123', {
+    return jwt.sign({ id: this._id, role: this.role }, process.env.JWT_SECRET, {
         expiresIn: '30d'
     });
 };

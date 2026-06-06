@@ -39,6 +39,11 @@ const createOrderRequest = asyncHandler(async (req, res) => {
         throw new ErrorResponse('You already have a pending order request for this crop', 400);
     }
 
+    // Guard against corrupt crop data
+    if (!crop.farmerId) {
+        throw new ErrorResponse('Crop owner not found. Cannot place order.', 500);
+    }
+
     const orderRequest = await OrderRequest.create({
         crop: cropId,
         farmer: crop.farmerId,
@@ -88,20 +93,34 @@ const getOrders = asyncHandler(async (req, res) => {
         query.vendor = req.user.id;
     }
 
-    // Optional status filter
-    if (req.query.status) {
+    // Optional status filter — validate against allowed values (prevents injection)
+    const VALID_STATUSES = ['Pending', 'Accepted', 'Rejected', 'Completed', 'Cancelled'];
+    if (req.query.status && VALID_STATUSES.includes(req.query.status)) {
         query.status = req.query.status;
     }
 
-    const orders = await OrderRequest.find(query)
-        .populate('crop', 'name category price unit images')
-        .populate('farmer', 'name phone location')
-        .populate('vendor', 'name phone')
-        .sort({ createdAt: -1 });
+    // Pagination
+    const page  = Math.max(1, parseInt(req.query.page,  10) || 1);
+    const limit = Math.min(100, parseInt(req.query.limit, 10) || 20);
+    const skip  = (page - 1) * limit;
+
+    const [orders, total] = await Promise.all([
+        OrderRequest.find(query)
+            .populate('crop', 'name category price unit images variety')
+            .populate('farmer', 'name phone location')
+            .populate('vendor', 'name phone')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit),
+        OrderRequest.countDocuments(query)
+    ]);
 
     res.status(200).json({
         success: true,
         count: orders.length,
+        total,
+        totalPages: Math.ceil(total / limit),
+        currentPage: page,
         data: orders
     });
 });
@@ -262,8 +281,144 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     });
 });
 
+
+// @desc    Vendor submits payment details after order is accepted
+// @route   PATCH /api/orders/:id/payment
+// @access  Private (Vendor only)
+const submitPayment = asyncHandler(async (req, res) => {
+    const { method, upiRef, note } = req.body;
+
+    if (!method) {
+        throw new ErrorResponse('Payment method is required', 400);
+    }
+    const validMethods = ['UPI', 'Cash', 'Bank Transfer', 'Cheque'];
+    if (!validMethods.includes(method)) {
+        throw new ErrorResponse('Invalid payment method', 400);
+    }
+
+    const order = await OrderRequest.findById(req.params.id);
+    if (!order) throw new ErrorResponse('Order not found', 404);
+
+    // Only vendor of this order can submit payment
+    if (order.vendor.toString() !== req.user.id) {
+        throw new ErrorResponse('Not authorized', 403);
+    }
+
+    // Payment only makes sense on Accepted orders
+    if (order.status !== 'Accepted') {
+        throw new ErrorResponse('Payment can only be submitted for accepted orders', 400);
+    }
+
+    // Prevent re-submission if already verified
+    if (order.payment?.status === 'Verified') {
+        throw new ErrorResponse('Payment already verified by farmer', 400);
+    }
+
+    const amount = order.requestedQuantity * order.offeredPrice;
+
+    order.payment = {
+        amount,
+        method,
+        upiRef:  upiRef  || '',
+        note:    note    || '',
+        status:  'Submitted',
+        paidAt:  new Date(),
+    };
+    await order.save();
+
+    // Notify farmer
+    const vendorUser = await User.findById(req.user.id).select('name');
+    const vendorName = vendorUser ? vendorUser.name : 'Vendor';
+    await createNotification(
+        order.farmer,
+        req.user.id,
+        order._id,
+        'PAYMENT_SUBMITTED',
+        `💳 Payment submitted! ${vendorName} has submitted ₹${amount.toLocaleString('en-IN')} via ${method}. Please verify and confirm.`
+    );
+
+    res.status(200).json({
+        success: true,
+        data: order,
+        message: 'Payment submitted successfully. Farmer will verify shortly.'
+    });
+});
+
+// @desc    Farmer verifies or rejects submitted payment
+// @route   PATCH /api/orders/:id/payment/verify
+// @access  Private (Farmer only)
+const verifyPayment = asyncHandler(async (req, res) => {
+    const { action } = req.body; // 'confirm' | 'reject'
+
+    if (!['confirm', 'reject'].includes(action)) {
+        throw new ErrorResponse('Action must be "confirm" or "reject"', 400);
+    }
+
+    const order = await OrderRequest.findById(req.params.id);
+    if (!order) throw new ErrorResponse('Order not found', 404);
+
+    // Only farmer of this order can verify
+    if (order.farmer.toString() !== req.user.id) {
+        throw new ErrorResponse('Not authorized', 403);
+    }
+
+    if (order.status !== 'Accepted') {
+        throw new ErrorResponse('Payment verification only allowed on accepted orders', 400);
+    }
+
+    if (order.payment?.status !== 'Submitted') {
+        throw new ErrorResponse('No submitted payment found to verify', 400);
+    }
+
+    const farmerUser = await User.findById(req.user.id).select('name');
+    const farmerName = farmerUser ? farmerUser.name : 'Farmer';
+    const amount = order.payment.amount || (order.requestedQuantity * order.offeredPrice);
+
+    if (action === 'confirm') {
+        order.payment.status = 'Verified';
+        order.payment.verifiedAt = new Date();
+        await order.save();
+
+        await createNotification(
+            order.vendor,
+            req.user.id,
+            order._id,
+            'PAYMENT_VERIFIED',
+            `✅ Payment confirmed! ${farmerName} has verified your ₹${amount.toLocaleString('en-IN')} payment. Proceed to pickup with the OTP.`
+        );
+
+        return res.status(200).json({
+            success: true,
+            data: order,
+            message: 'Payment verified. Vendor can now proceed to pickup.'
+        });
+    }
+
+    // action === 'reject'
+    order.payment.status = 'Unpaid';
+    order.payment.paidAt = undefined;
+    await order.save();
+
+    await createNotification(
+        order.vendor,
+        req.user.id,
+        order._id,
+        'PAYMENT_REJECTED',
+        `❌ Payment not confirmed. ${farmerName} could not verify your payment. Please recheck and resubmit.`
+    );
+
+    res.status(200).json({
+        success: true,
+        data: order,
+        message: 'Payment rejected. Vendor must resubmit.'
+    });
+});
+
 module.exports = {
     createOrderRequest,
     getOrders,
-    updateOrderStatus
+    updateOrderStatus,
+    submitPayment,
+    verifyPayment,
 };
+

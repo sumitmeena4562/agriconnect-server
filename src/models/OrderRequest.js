@@ -45,6 +45,31 @@ const orderRequestSchema = new mongoose.Schema({
         type: String,
         enum: ['Pending', 'Accepted', 'Rejected', 'Completed', 'Cancelled'],
         default: 'Pending'
+    },
+    // ── Payment Record (Option B — no gateway required) ──────────────
+    payment: {
+        amount: {
+            type: Number   // auto-calculated: requestedQuantity × offeredPrice
+        },
+        method: {
+            type: String,
+            enum: ['UPI', 'Cash', 'Bank Transfer', 'Cheque'],
+        },
+        upiRef: {
+            type: String,  // UPI transaction ID or bank ref (optional)
+            default: ''
+        },
+        status: {
+            type: String,
+            enum: ['Unpaid', 'Submitted', 'Verified'],
+            default: 'Unpaid'
+        },
+        note: {
+            type: String,
+            default: ''
+        },
+        paidAt:     { type: Date },
+        verifiedAt: { type: Date }
     }
 }, { timestamps: true });
 

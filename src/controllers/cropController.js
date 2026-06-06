@@ -69,17 +69,7 @@ const getFarmerCrops = asyncHandler(async (req, res) => {
         orConditions.push({ _id: order.crop });
       }
     } 
-    // If it's a short 6-character hex suffix (Order ID)
-    else if (/^[0-9a-fA-F]{6}$/.test(cleanKeyword)) {
-      const OrderRequest = require('../models/OrderRequest');
-      const allOrders = await OrderRequest.find({});
-      const matchingOrders = allOrders.filter(o => o._id.toString().endsWith(cleanKeyword.toLowerCase()));
-      if (matchingOrders.length > 0) {
-        matchingOrders.forEach(o => {
-          if (o.crop) orConditions.push({ _id: o.crop });
-        });
-      }
-    }
+    // Note: short 6-char hex suffix search removed (caused full table scan on OrderRequest)
 
     query.$or = orConditions;
   }
@@ -294,17 +284,7 @@ const getMarketplaceCrops = asyncHandler(async (req, res) => {
         orConditions.push({ _id: order.crop });
       }
     } 
-    // If it's a short 6-character hex suffix (Order ID)
-    else if (/^[0-9a-fA-F]{6}$/.test(cleanKeyword)) {
-      const OrderRequest = require('../models/OrderRequest');
-      const allOrders = await OrderRequest.find({});
-      const matchingOrders = allOrders.filter(o => o._id.toString().endsWith(cleanKeyword.toLowerCase()));
-      if (matchingOrders.length > 0) {
-        matchingOrders.forEach(o => {
-          if (o.crop) orConditions.push({ _id: o.crop });
-        });
-      }
-    }
+    // Note: short 6-char hex suffix search removed (caused full table scan on OrderRequest)
 
     query.$or = orConditions;
   }

@@ -12,6 +12,12 @@ const { requestLogger } = require('./middleware/logger');
 // Load env vars
 dotenv.config();
 
+// ── Fail-fast: Critical env vars check ───────────────────────────────────────
+if (!process.env.JWT_SECRET) {
+    console.error('\n[FATAL] JWT_SECRET is not set in .env! Server cannot start safely.\n');
+    process.exit(1);
+}
+
 // Connect to database
 connectDB();
 
@@ -30,8 +36,11 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Centralized request tracing and logging middleware
 app.use(requestLogger);
 
-// Enable CORS
-app.use(cors());
+// Enable CORS (whitelist via ALLOWED_ORIGIN env var, fallback to localhost for dev)
+app.use(cors({
+    origin: process.env.ALLOWED_ORIGIN || 'http://localhost:5173',
+    credentials: true
+}));
 
 const path = require('path');
 const farmerRoutes = require('./routes/farmerRoutes');

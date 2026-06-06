@@ -16,7 +16,11 @@ const notificationSchema = new mongoose.Schema({
     },
     type: {
         type: String,
-        enum: ['ORDER_RECEIVED', 'ORDER_ACCEPTED', 'ORDER_REJECTED', 'ORDER_COMPLETED', 'ORDER_CANCELLED', 'SYSTEM'],
+        enum: [
+            'ORDER_RECEIVED', 'ORDER_ACCEPTED', 'ORDER_REJECTED', 'ORDER_COMPLETED', 'ORDER_CANCELLED',
+            'PAYMENT_SUBMITTED', 'PAYMENT_VERIFIED', 'PAYMENT_REJECTED',
+            'SYSTEM'
+        ],
         required: true
     },
     text: {
@@ -31,6 +35,7 @@ const notificationSchema = new mongoose.Schema({
 
 notificationSchema.index({ recipient: 1, createdAt: -1 });
 notificationSchema.index({ recipient: 1, read: 1 });
+notificationSchema.index({ recipient: 1, type: 1 });
 notificationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 2592000 }); // 30-day auto-cleanup
 
 const Notification = mongoose.model('Notification', notificationSchema);
