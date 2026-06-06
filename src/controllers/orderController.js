@@ -6,6 +6,7 @@ const User = require('../models/User');
 const MockBankAccount = require('../models/MockBankAccount');
 const BankTransaction = require('../models/BankTransaction');
 const { createNotification } = require('./notificationController');
+const sseManager = require('../utils/sseManager');
 
 // @desc    Send an order request to a farmer
 // @route   POST /api/orders
@@ -61,6 +62,10 @@ const createOrderRequest = asyncHandler(async (req, res) => {
     // Populate for response
     await orderRequest.populate('crop', 'name category price unit images');
     await orderRequest.populate('farmer', 'name phone location');
+    await orderRequest.populate('vendor', 'name phone');
+
+    // Broadcast new order to the farmer
+    sseManager.sendToUser(orderRequest.farmer, 'ORDER_UPDATED', orderRequest);
 
     const vendorUser = await User.findById(req.user.id);
     const vendorName = vendorUser ? vendorUser.name : 'Vendor';
@@ -223,6 +228,15 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     order.status = status;
     await order.save();
 
+    // Broadcast order status changes in real-time
+    await order.populate([
+        { path: 'crop', select: 'name category price unit images variety location' },
+        { path: 'farmer', select: 'name phone location' },
+        { path: 'vendor', select: 'name phone' }
+    ]);
+    sseManager.sendToUser(order.vendor, 'ORDER_UPDATED', order);
+    sseManager.sendToUser(order.farmer, 'ORDER_UPDATED', order);
+
     // Fetch current user name once (instead of per-branch)
     const currentUser = await User.findById(req.user.id).select('name');
     const currentUserName = currentUser ? currentUser.name : (req.user.role === 'FARMER' ? 'Farmer' : 'Vendor');
@@ -364,6 +378,15 @@ const submitPayment = asyncHandler(async (req, res) => {
     };
     await order.save();
 
+    // Broadcast payment submission in real-time
+    await order.populate([
+        { path: 'crop', select: 'name category price unit images variety location' },
+        { path: 'farmer', select: 'name phone location' },
+        { path: 'vendor', select: 'name phone' }
+    ]);
+    sseManager.sendToUser(order.vendor, 'ORDER_UPDATED', order);
+    sseManager.sendToUser(order.farmer, 'ORDER_UPDATED', order);
+
     // Notify farmer
     const vendorUser = await User.findById(req.user.id).select('name');
     const vendorName = vendorUser ? vendorUser.name : 'Vendor';
@@ -433,6 +456,15 @@ const verifyPayment = asyncHandler(async (req, res) => {
         order.payment.verifiedAt = new Date();
         await order.save();
 
+        // Broadcast payment verification to both parties
+        await order.populate([
+            { path: 'crop', select: 'name category price unit images variety location' },
+            { path: 'farmer', select: 'name phone location' },
+            { path: 'vendor', select: 'name phone' }
+        ]);
+        sseManager.sendToUser(order.vendor, 'ORDER_UPDATED', order);
+        sseManager.sendToUser(order.farmer, 'ORDER_UPDATED', order);
+
         await createNotification(
             order.vendor,
             req.user.id,
@@ -470,6 +502,15 @@ const verifyPayment = asyncHandler(async (req, res) => {
     order.payment.status = 'Unpaid';
     order.payment.paidAt = undefined;
     await order.save();
+
+    // Broadcast payment rejection to both parties
+    await order.populate([
+        { path: 'crop', select: 'name category price unit images variety location' },
+        { path: 'farmer', select: 'name phone location' },
+        { path: 'vendor', select: 'name phone' }
+    ]);
+    sseManager.sendToUser(order.vendor, 'ORDER_UPDATED', order);
+    sseManager.sendToUser(order.farmer, 'ORDER_UPDATED', order);
 
     await createNotification(
         order.vendor,

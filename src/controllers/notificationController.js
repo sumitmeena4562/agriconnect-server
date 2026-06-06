@@ -1,6 +1,7 @@
 const Notification = require('../models/Notification');
 const asyncHandler = require('../middleware/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
+const sseManager = require('../utils/sseManager');
 
 // @desc    Get all notifications for logged in user
 // @route   GET /api/notifications
@@ -84,6 +85,22 @@ const createNotification = async (recipient, sender, order, type, text) => {
             type,
             text
         });
+
+        // Populate order details if present, so client doesn't hit missing property errors
+        if (order) {
+            await notification.populate({
+                path: 'order',
+                select: 'requestedQuantity offeredPrice status deliveryOTP crop',
+                populate: {
+                    path: 'crop',
+                    select: 'name unit images'
+                }
+            });
+        }
+
+        // Send real-time broadcast to the recipient
+        sseManager.sendToUser(recipient, 'NOTIFICATION_RECEIVED', notification);
+
         return { success: true, notification };
     } catch (error) {
         console.error('[NOTIFICATION_FAILED] Error creating notification:', error.message, { recipient, type });
