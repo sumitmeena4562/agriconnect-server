@@ -53,18 +53,33 @@ const notificationRoutes = require('./routes/notificationRoutes');
 // Make the uploads folder statically available
 app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads')));
 
-// Basic Route
+// API Info Route
 app.get('/', (req, res) => {
-    res.send('AgriConnect API is running...');
+    res.json({
+        name: 'AgriConnect API',
+        version: 'v1',
+        status: 'running',
+        base: '/api/v1',
+        endpoints: ['/api/v1/auth', '/api/v1/farmers', '/api/v1/crops', '/api/v1/orders', '/api/v1/notifications', '/api/v1/upload']
+    });
 });
 
-// Mount routes
-app.use('/api/farmers', farmerRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/crops', cropRoutes);
-app.use('/api/upload', uploadRoutes);
-app.use('/api/orders', orderRoutes);
-app.use('/api/notifications', notificationRoutes);
+// ── Mount routes under /api/v1/ (versioned) ──────────────────────────────────
+app.use('/api/v1/farmers',       farmerRoutes);
+app.use('/api/v1/auth',          authRoutes);
+app.use('/api/v1/crops',         cropRoutes);
+app.use('/api/v1/upload',        uploadRoutes);
+app.use('/api/v1/orders',        orderRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+
+// ── Legacy /api/ → /api/v1/ backward-compat redirects ────────────────────────
+// Keeps old clients working during transition (307 preserves HTTP method)
+['farmers', 'auth', 'crops', 'upload', 'orders', 'notifications'].forEach((r) => {
+    app.use(`/api/${r}`, (req, res) => {
+        const redirectUrl = `/api/v1/${r}${req.url === '/' ? '' : req.url}`;
+        res.redirect(307, redirectUrl);
+    });
+});
 
 // Error Handler Middleware (MUST be after routes)
 app.use(errorHandler);
