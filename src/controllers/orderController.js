@@ -3,6 +3,8 @@ const Crop = require('../models/Crop');
 const asyncHandler = require('../middleware/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 const User = require('../models/User');
+const MockBankAccount = require('../models/MockBankAccount');
+const BankTransaction = require('../models/BankTransaction');
 const { createNotification } = require('./notificationController');
 
 // @desc    Send an order request to a farmer
@@ -316,6 +318,42 @@ const submitPayment = asyncHandler(async (req, res) => {
 
     const amount = order.requestedQuantity * order.offeredPrice;
 
+    // Fetch or create Vendor's bank account
+    let vendorAccount = await MockBankAccount.findOne({ user: req.user.id });
+    if (!vendorAccount) {
+        const vendorUser = await User.findById(req.user.id);
+        if (!vendorUser) {
+            throw new ErrorResponse('Vendor user not found', 404);
+        }
+        const randomDigits = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+        vendorAccount = await MockBankAccount.create({
+            user: req.user.id,
+            accountHolderName: vendorUser.name,
+            accountNumber: `AGRI${randomDigits}`,
+            balance: 100000
+        });
+    }
+
+    // Check balance
+    if (vendorAccount.balance < amount) {
+        throw new ErrorResponse(`Insufficient mock bank balance. Required: ₹${amount.toLocaleString('en-IN')}, available: ₹${vendorAccount.balance.toLocaleString('en-IN')}. Please top up your bank account.`, 400);
+    }
+
+    // Deduct balance
+    vendorAccount.balance -= amount;
+    await vendorAccount.save();
+
+    // Create a Completed PAYMENT transaction (debit from Vendor, credited on verify)
+    await BankTransaction.create({
+        sender: req.user.id,
+        receiver: order.farmer,
+        order: order._id,
+        amount,
+        type: 'PAYMENT',
+        status: 'Completed',
+        description: `Mock payment for order #${order._id.toString().slice(-6).toUpperCase()}`
+    });
+
     order.payment = {
         amount,
         method,
@@ -375,6 +413,22 @@ const verifyPayment = asyncHandler(async (req, res) => {
     const amount = order.payment.amount || (order.requestedQuantity * order.offeredPrice);
 
     if (action === 'confirm') {
+        // Fetch or create Farmer's bank account
+        let farmerAccount = await MockBankAccount.findOne({ user: req.user.id });
+        if (!farmerAccount) {
+            const randomDigits = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+            farmerAccount = await MockBankAccount.create({
+                user: req.user.id,
+                accountHolderName: farmerName,
+                accountNumber: `AGRI${randomDigits}`,
+                balance: 0
+            });
+        }
+
+        // Credit to Farmer
+        farmerAccount.balance += amount;
+        await farmerAccount.save();
+
         order.payment.status = 'Verified';
         order.payment.verifiedAt = new Date();
         await order.save();
@@ -395,6 +449,24 @@ const verifyPayment = asyncHandler(async (req, res) => {
     }
 
     // action === 'reject'
+    // Refund Vendor
+    let vendorAccount = await MockBankAccount.findOne({ user: order.vendor });
+    if (vendorAccount) {
+        vendorAccount.balance += amount;
+        await vendorAccount.save();
+    }
+
+    // Log the refund transaction
+    await BankTransaction.create({
+        sender: req.user.id, // Farmer refunds
+        receiver: order.vendor, // Vendor gets refund
+        order: order._id,
+        amount,
+        type: 'REFUND',
+        status: 'Completed',
+        description: `Refund for rejected payment of order #${order._id.toString().slice(-6).toUpperCase()}`
+    });
+
     order.payment.status = 'Unpaid';
     order.payment.paidAt = undefined;
     await order.save();
@@ -404,7 +476,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
         req.user.id,
         order._id,
         'PAYMENT_REJECTED',
-        `❌ Payment not confirmed. ${farmerName} could not verify your payment. Please recheck and resubmit.`
+        `❌ Payment not confirmed. ${farmerName} could not verify your payment. Funds have been refunded to your bank account. Please recheck and resubmit.`
     );
 
     res.status(200).json({
