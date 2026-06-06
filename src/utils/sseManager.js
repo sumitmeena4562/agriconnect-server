@@ -6,7 +6,8 @@ const connections = new Map(); // userId string -> Set of Response objects
  * @param {Response} res 
  */
 const addConnection = (userId, res) => {
-    const idStr = userId.toString();
+    const targetId = userId._id ? userId._id : userId;
+    const idStr = targetId.toString();
     if (!connections.has(idStr)) {
         connections.set(idStr, new Set());
     }
@@ -20,7 +21,8 @@ const addConnection = (userId, res) => {
  * @param {Response} res 
  */
 const removeConnection = (userId, res) => {
-    const idStr = userId.toString();
+    const targetId = userId._id ? userId._id : userId;
+    const idStr = targetId.toString();
     if (connections.has(idStr)) {
         const userStreams = connections.get(idStr);
         userStreams.delete(res);
@@ -39,7 +41,8 @@ const removeConnection = (userId, res) => {
  */
 const sendToUser = (userId, eventType, data) => {
     if (!userId) return false;
-    const idStr = userId.toString();
+    const targetId = userId._id ? userId._id : userId;
+    const idStr = targetId.toString();
     const userStreams = connections.get(idStr);
     
     if (userStreams && userStreams.size > 0) {
