@@ -170,6 +170,16 @@ const updateCrop = asyncHandler(async (req, res) => {
     }
   });
 
+  // If quantity is updated to a positive number, automatically mark status as Available
+  if (updateData.quantity !== undefined) {
+    const qty = Number(updateData.quantity);
+    if (qty > 0) {
+      updateData.status = 'Available';
+    } else {
+      updateData.status = 'Sold Out';
+    }
+  }
+
   crop = await Crop.findByIdAndUpdate(req.params.id, updateData, {
     new: true,
     runValidators: true
