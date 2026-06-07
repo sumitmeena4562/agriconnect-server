@@ -51,6 +51,7 @@ const orderRoutes = require('./routes/orderRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const bankRoutes = require('./routes/bankRoutes');
 const sseRoutes = require('./routes/sseRoutes');
+const driverRoutes = require('./routes/driverRoutes');
 
 // Make the uploads folder statically available
 app.use('/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads')));
@@ -62,7 +63,7 @@ app.get('/', (req, res) => {
         version: 'v1',
         status: 'running',
         base: '/api/v1',
-        endpoints: ['/api/v1/auth', '/api/v1/farmers', '/api/v1/crops', '/api/v1/orders', '/api/v1/notifications', '/api/v1/upload']
+        endpoints: ['/api/v1/auth', '/api/v1/farmers', '/api/v1/crops', '/api/v1/orders', '/api/v1/notifications', '/api/v1/upload', '/api/v1/drivers']
     });
 });
 
@@ -75,10 +76,11 @@ app.use('/api/v1/orders',        orderRoutes);
 app.use('/api/v1/notifications', notificationRoutes);
 app.use('/api/v1/bank',          bankRoutes);
 app.use('/api/v1/sse',           sseRoutes);
+app.use('/api/v1/drivers',       driverRoutes);
 
 // ── Legacy /api/ → /api/v1/ backward-compat redirects ────────────────────────
 // Keeps old clients working during transition (307 preserves HTTP method)
-['farmers', 'auth', 'crops', 'upload', 'orders', 'notifications', 'bank', 'sse'].forEach((r) => {
+['farmers', 'auth', 'crops', 'upload', 'orders', 'notifications', 'bank', 'sse', 'drivers'].forEach((r) => {
     app.use(`/api/${r}`, (req, res) => {
         const redirectUrl = `/api/v1/${r}${req.url === '/' ? '' : req.url}`;
         res.redirect(307, redirectUrl);

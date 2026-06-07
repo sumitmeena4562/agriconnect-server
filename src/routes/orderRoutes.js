@@ -6,6 +6,8 @@ const {
     updateOrderStatus,
     submitPayment,
     verifyPayment,
+    dispatchOrder,
+    getLiveTracking
 } = require('../controllers/orderController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 const validateRequest = require('../middleware/validateRequest');
@@ -28,5 +30,9 @@ router.patch('/:id/status', validateRequest(updateOrderStatusSchema), updateOrde
 // Payment routes
 router.patch('/:id/payment',        authorize('VENDOR', 'CUSTOMER'), validateRequest(submitPaymentSchema),  submitPayment);
 router.patch('/:id/payment/verify', authorize('FARMER'),             validateRequest(verifyPaymentSchema),  verifyPayment);
+
+// Logistics / Dispatch routes
+router.patch('/:id/dispatch',       authorize('FARMER'), dispatchOrder);
+router.get('/:id/tracking',         getLiveTracking);
 
 module.exports = router;

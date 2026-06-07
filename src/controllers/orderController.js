@@ -60,7 +60,7 @@ const createOrderRequest = asyncHandler(async (req, res) => {
     });
 
     // Populate for response
-    await orderRequest.populate('crop', 'name category price unit images');
+    await orderRequest.populate('crop', 'name category price unit images variety logisticsOption paymentTerms');
     await orderRequest.populate('farmer', 'name phone location');
     await orderRequest.populate('vendor', 'name phone');
 
@@ -113,7 +113,7 @@ const getOrders = asyncHandler(async (req, res) => {
 
     const [orders, total] = await Promise.all([
         OrderRequest.find(query)
-            .populate('crop', 'name category price unit images variety')
+            .populate('crop', 'name category price unit images variety logisticsOption paymentTerms')
             .populate('farmer', 'name phone location')
             .populate('vendor', 'name phone')
             .sort({ createdAt: -1 })
@@ -243,6 +243,12 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     order.status = status;
     await order.save();
 
+    // Release driver if assigned and completed/cancelled
+    if ((status === 'Completed' || status === 'Cancelled' || status === 'Rejected') && order.driver) {
+        const Driver = require('../models/Driver');
+        await Driver.findByIdAndUpdate(order.driver, { status: 'Available' });
+    }
+
     // Log offline cash ledger entries upon completion
     if (status === 'Completed') {
         const crop = await Crop.findById(order.crop);
@@ -275,7 +281,7 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 
     // Broadcast order status changes in real-time
     await order.populate([
-        { path: 'crop', select: 'name category price unit images variety location' },
+        { path: 'crop', select: 'name category price unit images variety location logisticsOption paymentTerms' },
         { path: 'farmer', select: 'name phone location' },
         { path: 'vendor', select: 'name phone' }
     ]);
@@ -438,7 +444,7 @@ const submitPayment = asyncHandler(async (req, res) => {
 
     // Broadcast payment submission in real-time
     await order.populate([
-        { path: 'crop', select: 'name category price unit images variety location' },
+        { path: 'crop', select: 'name category price unit images variety location logisticsOption paymentTerms' },
         { path: 'farmer', select: 'name phone location' },
         { path: 'vendor', select: 'name phone' }
     ]);
@@ -516,7 +522,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
 
         // Broadcast payment verification to both parties
         await order.populate([
-            { path: 'crop', select: 'name category price unit images variety location' },
+            { path: 'crop', select: 'name category price unit images variety location logisticsOption paymentTerms' },
             { path: 'farmer', select: 'name phone location' },
             { path: 'vendor', select: 'name phone' }
         ]);
@@ -563,7 +569,7 @@ const verifyPayment = asyncHandler(async (req, res) => {
 
     // Broadcast payment rejection to both parties
     await order.populate([
-        { path: 'crop', select: 'name category price unit images variety location' },
+        { path: 'crop', select: 'name category price unit images variety location logisticsOption paymentTerms' },
         { path: 'farmer', select: 'name phone location' },
         { path: 'vendor', select: 'name phone' }
     ]);
@@ -585,11 +591,208 @@ const verifyPayment = asyncHandler(async (req, res) => {
     });
 });
 
+// @desc    Farmer assigns a driver and dispatches the order (In Transit)
+// @route   PATCH /api/orders/:id/dispatch
+// @access  Private (Farmer only)
+const dispatchOrder = asyncHandler(async (req, res) => {
+    const { driverId } = req.body;
+
+    if (!driverId) {
+        throw new ErrorResponse('Please assign a driver for dispatch', 400);
+    }
+
+    const order = await OrderRequest.findById(req.params.id);
+    if (!order) throw new ErrorResponse('Order request not found', 404);
+
+    // Only authorized farmer of this order
+    if (order.farmer.toString() !== req.user.id) {
+        throw new ErrorResponse('Not authorized to dispatch this order', 403);
+    }
+
+    if (order.status !== 'Accepted') {
+        throw new ErrorResponse('Only accepted orders can be dispatched', 400);
+    }
+
+    if (order.deliveryStatus === 'In Transit') {
+        throw new ErrorResponse('Order is already in transit', 400);
+    }
+
+    if (driverId === 'self') {
+        order.driver = null;
+        order.dispatchTime = new Date();
+        order.deliveryStatus = 'In Transit';
+        await order.save();
+
+        // Broadcast SSE update
+        await order.populate([
+            { path: 'crop', select: 'name category price unit images variety location logisticsOption paymentTerms' },
+            { path: 'farmer', select: 'name phone location' },
+            { path: 'vendor', select: 'name phone' }
+        ]);
+        sseManager.sendToUser(order.vendor, 'ORDER_UPDATED', order);
+        sseManager.sendToUser(order.farmer, 'ORDER_UPDATED', order);
+
+        // Create Notification for vendor
+        const User = require('../models/User');
+        const farmerUser = await User.findById(req.user.id).select('name');
+        const farmerName = farmerUser ? farmerUser.name : 'Farmer';
+        await createNotification(
+            order.vendor,
+            req.user.id,
+            order._id,
+            'ORDER_ACCEPTED',
+            `🚚 Order dispatched! Farmer ${farmerName} is delivering the crops directly (Self-Delivery).`
+        );
+
+        return res.status(200).json({
+            success: true,
+            data: order,
+            message: 'Order dispatched successfully via Self-Delivery.'
+        });
+    }
+
+    const Driver = require('../models/Driver');
+    const driver = await Driver.findById(driverId);
+    if (!driver) throw new ErrorResponse('Driver not found', 404);
+
+    if (driver.farmer.toString() !== req.user.id) {
+        throw new ErrorResponse('Driver does not belong to your fleet', 403);
+    }
+
+    if (driver.status === 'On Delivery') {
+        throw new ErrorResponse('Driver is currently on another delivery', 400);
+    }
+
+    // Assign driver and set In Transit status
+    order.driver = driver._id;
+    order.dispatchTime = new Date();
+    order.deliveryStatus = 'In Transit';
+    await order.save();
+
+    // Mark driver status as busy
+    driver.status = 'On Delivery';
+    await driver.save();
+
+    // Broadcast SSE update
+    await order.populate([
+        { path: 'crop', select: 'name category price unit images variety location logisticsOption paymentTerms' },
+        { path: 'farmer', select: 'name phone location' },
+        { path: 'vendor', select: 'name phone' },
+        { path: 'driver', select: 'name phone vehicleNumber vehicleType' }
+    ]);
+    sseManager.sendToUser(order.vendor, 'ORDER_UPDATED', order);
+    sseManager.sendToUser(order.farmer, 'ORDER_UPDATED', order);
+
+    // Create Notification for vendor
+    const User = require('../models/User');
+    const farmerUser = await User.findById(req.user.id).select('name');
+    const farmerName = farmerUser ? farmerUser.name : 'Farmer';
+    await createNotification(
+        order.vendor,
+        req.user.id,
+        order._id,
+        'ORDER_ACCEPTED', // Reuse accepted event
+        `🚚 Order dispatched! Farmer ${farmerName} has dispatched driver ${driver.name} (${driver.vehicleType} - ${driver.vehicleNumber}) with your crops.`
+    );
+
+    res.status(200).json({
+        success: true,
+        data: order,
+        message: 'Order dispatched successfully and driver is on their way.'
+    });
+});
+
+// @desc    Get live delivery tracking status (Coordinates and ETA)
+// @route   GET /api/orders/:id/tracking
+// @access  Private
+const getLiveTracking = asyncHandler(async (req, res) => {
+    const order = await OrderRequest.findById(req.params.id).populate('driver');
+    if (!order) throw new ErrorResponse('Order not found', 404);
+
+    // Verify user is farmer or vendor of this order
+    if (order.farmer.toString() !== req.user.id && order.vendor.toString() !== req.user.id) {
+        throw new ErrorResponse('Not authorized to track this order', 403);
+    }
+
+    if (order.deliveryStatus !== 'In Transit' && order.deliveryStatus !== 'Arrived' && order.deliveryStatus !== 'Completed') {
+        return res.status(200).json({
+            success: true,
+            deliveryStatus: order.deliveryStatus,
+            message: 'Order is not currently in transit'
+        });
+    }
+
+    // Deterministic Start and End coordinates based on order ID to simulate route
+    const id = order._id.toString();
+    const seed1 = id.charCodeAt(id.length - 1) || 0;
+    const seed2 = id.charCodeAt(id.length - 2) || 0;
+    const seed3 = id.charCodeAt(id.length - 3) || 0;
+    const seed4 = id.charCodeAt(id.length - 4) || 0;
+
+    const startLat = 28.42 + (seed1 % 10) / 100;
+    const startLng = 77.01 + (seed2 % 10) / 100;
+    const endLat = 28.61 + (seed3 % 10) / 100;
+    const endLng = 77.20 + (seed4 % 10) / 100;
+
+    // Total simulation transit time: 3 minutes (180 seconds)
+    const TRANSIT_DURATION = 180; 
+    const dispatchTime = order.dispatchTime ? new Date(order.dispatchTime).getTime() : Date.now();
+    const elapsedSeconds = Math.max(0, Math.floor((Date.now() - dispatchTime) / 1000));
+    
+    // Generate route points
+    const routePoints = [];
+    const NUM_POINTS = 30;
+    for (let i = 0; i <= NUM_POINTS; i++) {
+        const t = i / NUM_POINTS;
+        // Linear interpolation with a slight arc to look like a road path
+        const lat = startLat + (endLat - startLat) * t + 0.02 * Math.sin(t * Math.PI);
+        const lng = startLng + (endLng - startLng) * t;
+        routePoints.push([lat, lng]);
+    }
+
+    let currentCoords;
+    let etaSeconds = 0;
+    let status = order.deliveryStatus;
+
+    if (elapsedSeconds >= TRANSIT_DURATION) {
+        currentCoords = [endLat, endLng];
+        etaSeconds = 0;
+        status = 'Arrived';
+        if (order.deliveryStatus === 'In Transit') {
+            order.deliveryStatus = 'Arrived';
+            await order.save();
+        }
+    } else {
+        const progress = elapsedSeconds / TRANSIT_DURATION;
+        const index = Math.floor(progress * NUM_POINTS);
+        currentCoords = routePoints[index] || routePoints[0];
+        etaSeconds = TRANSIT_DURATION - elapsedSeconds;
+    }
+
+    res.status(200).json({
+        success: true,
+        deliveryStatus: status,
+        startCoords: [startLat, startLng],
+        endCoords: [endLat, endLng],
+        currentCoords,
+        etaSeconds,
+        route: routePoints,
+        driver: order.driver ? {
+            name: order.driver.name,
+            phone: order.driver.phone,
+            vehicleNumber: order.driver.vehicleNumber,
+            vehicleType: order.driver.vehicleType
+        } : null
+    });
+});
+
 module.exports = {
     createOrderRequest,
     getOrders,
     updateOrderStatus,
     submitPayment,
     verifyPayment,
+    dispatchOrder,
+    getLiveTracking
 };
 

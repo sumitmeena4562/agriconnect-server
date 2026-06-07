@@ -46,6 +46,20 @@ const orderRequestSchema = new mongoose.Schema({
         enum: ['Pending', 'Accepted', 'Rejected', 'Completed', 'Cancelled'],
         default: 'Pending'
     },
+    // ── Logistics & Delivery Fields ──────────────────────────────────
+    driver: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Driver',
+        default: null
+    },
+    dispatchTime: {
+        type: Date
+    },
+    deliveryStatus: {
+        type: String,
+        enum: ['Pending', 'Assigned', 'In Transit', 'Arrived', 'Completed'],
+        default: 'Pending'
+    },
     // ── Payment Record (Option B — no gateway required) ──────────────
     payment: {
         amount: {
