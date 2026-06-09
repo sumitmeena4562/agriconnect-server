@@ -116,6 +116,7 @@ const getOrders = asyncHandler(async (req, res) => {
             .populate('crop', 'name category price unit images variety logisticsOption paymentTerms')
             .populate('farmer', 'name phone location')
             .populate('vendor', 'name phone')
+            .populate('driver', 'name phone vehicleNumber vehicleType')
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit),
