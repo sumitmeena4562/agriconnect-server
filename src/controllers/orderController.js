@@ -805,6 +805,7 @@ const getLiveTracking = asyncHandler(async (req, res) => {
         currentCoords,
         etaSeconds,
         route: routePoints,
+        dispatchTime: order.dispatchTime,
         driver: order.driver ? {
             name: order.driver.name,
             phone: order.driver.phone,
