@@ -703,6 +703,28 @@ const dispatchOrder = asyncHandler(async (req, res) => {
     });
 });
 
+// Helper to fetch actual driving route from OSRM
+const fetchOmsrRoute = async (startLat, startLng, endLat, endLng) => {
+    try {
+        const url = `https://router.projectosrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+        const response = await fetch(url, { 
+            headers: { 'User-Agent': 'AgriConnectApp/1.0' } 
+        });
+        if (!response.ok) {
+            throw new Error(`OSRM responded with status ${response.status}`);
+        }
+        const data = await response.json();
+        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+            const geojsonCoords = data.routes[0].geometry.coordinates;
+            // Map [lng, lat] to [lat, lng] for Leaflet
+            return geojsonCoords.map(coord => [coord[1], coord[0]]);
+        }
+    } catch (error) {
+        console.error('OSRM route fetch failed, using fallback simulated path:', error.message);
+    }
+    return null;
+};
+
 // @desc    Get live delivery tracking status (Coordinates and ETA)
 // @route   GET /api/orders/:id/tracking
 // @access  Private
@@ -740,23 +762,28 @@ const getLiveTracking = asyncHandler(async (req, res) => {
     const dispatchTime = order.dispatchTime ? new Date(order.dispatchTime).getTime() : Date.now();
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - dispatchTime) / 1000));
     
-    // Generate route points
-    const routePoints = [];
-    const NUM_POINTS = 30;
-    for (let i = 0; i <= NUM_POINTS; i++) {
-        const t = i / NUM_POINTS;
-        // Linear interpolation with a slight arc to look like a road path
-        const lat = startLat + (endLat - startLat) * t + 0.02 * Math.sin(t * Math.PI);
-        const lng = startLng + (endLng - startLng) * t;
-        routePoints.push([lat, lng]);
+    // Fetch driving coordinates from OSRM
+    let routePoints = await fetchOmsrRoute(startLat, startLng, endLat, endLng);
+
+    // Fallback to sine-wave simulated route if OSRM fails
+    if (!routePoints || routePoints.length === 0) {
+        routePoints = [];
+        const NUM_POINTS = 30;
+        for (let i = 0; i <= NUM_POINTS; i++) {
+            const t = i / NUM_POINTS;
+            const lat = startLat + (endLat - startLat) * t + 0.02 * Math.sin(t * Math.PI);
+            const lng = startLng + (endLng - startLng) * t;
+            routePoints.push([lat, lng]);
+        }
     }
 
     let currentCoords;
     let etaSeconds = 0;
     let status = order.deliveryStatus;
+    const numPoints = routePoints.length - 1;
 
     if (elapsedSeconds >= TRANSIT_DURATION) {
-        currentCoords = [endLat, endLng];
+        currentCoords = routePoints[numPoints];
         etaSeconds = 0;
         status = 'Arrived';
         if (order.deliveryStatus === 'In Transit') {
@@ -765,7 +792,7 @@ const getLiveTracking = asyncHandler(async (req, res) => {
         }
     } else {
         const progress = elapsedSeconds / TRANSIT_DURATION;
-        const index = Math.floor(progress * NUM_POINTS);
+        const index = Math.min(numPoints, Math.floor(progress * routePoints.length));
         currentCoords = routePoints[index] || routePoints[0];
         etaSeconds = TRANSIT_DURATION - elapsedSeconds;
     }
