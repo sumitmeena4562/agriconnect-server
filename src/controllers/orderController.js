@@ -7,6 +7,8 @@ const MockBankAccount = require('../models/MockBankAccount');
 const BankTransaction = require('../models/BankTransaction');
 const { createNotification } = require('./notificationController');
 const sseManager = require('../utils/sseManager');
+const FarmerProfile = require('../models/FarmerProfile');
+const VendorProfile = require('../models/VendorProfile');
 
 // @desc    Send an order request to a farmer
 // @route   POST /api/orders
@@ -77,9 +79,21 @@ const createOrderRequest = asyncHandler(async (req, res) => {
         `New order request! ${vendorName} has sent you a request for ${requestedQuantity} ${crop.unit} of ${crop.name}.`
     );
 
+    const orderObj = orderRequest.toObject();
+    
+    const farmerProfile = await FarmerProfile.findOne({ user: orderRequest.farmer });
+    if (farmerProfile && farmerProfile.location && farmerProfile.location.coordinates) {
+        orderObj.farmerCoordinates = farmerProfile.location.coordinates;
+    }
+
+    const vendorProfile = await VendorProfile.findOne({ user: orderRequest.vendor });
+    if (vendorProfile && vendorProfile.location && vendorProfile.location.coordinates) {
+        orderObj.vendorCoordinates = vendorProfile.location.coordinates;
+    }
+
     res.status(201).json({
         success: true,
-        data: orderRequest,
+        data: orderObj,
         message: 'Order request sent successfully to the farmer'
     });
 });
@@ -123,13 +137,34 @@ const getOrders = asyncHandler(async (req, res) => {
         OrderRequest.countDocuments(query)
     ]);
 
+    // Post-process to attach coordinates from profiles
+    const ordersWithCoordinates = await Promise.all(orders.map(async (order) => {
+        const orderObj = order.toObject();
+
+        if (order.farmer) {
+            const farmerProfile = await FarmerProfile.findOne({ user: order.farmer._id });
+            if (farmerProfile && farmerProfile.location && farmerProfile.location.coordinates) {
+                orderObj.farmerCoordinates = farmerProfile.location.coordinates;
+            }
+        }
+
+        if (order.vendor) {
+            const vendorProfile = await VendorProfile.findOne({ user: order.vendor._id });
+            if (vendorProfile && vendorProfile.location && vendorProfile.location.coordinates) {
+                orderObj.vendorCoordinates = vendorProfile.location.coordinates;
+            }
+        }
+
+        return orderObj;
+    }));
+
     res.status(200).json({
         success: true,
-        count: orders.length,
+        count: ordersWithCoordinates.length,
         total,
         totalPages: Math.ceil(total / limit),
         currentPage: page,
-        data: orders
+        data: ordersWithCoordinates
     });
 });
 

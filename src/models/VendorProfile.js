@@ -31,6 +31,10 @@ const vendorProfileSchema = new mongoose.Schema({
         type: String, 
         required: true 
     },
+    coordinates: {
+        lat: { type: Number },
+        lng: { type: Number }
+    },
     rating: {
         type: Number,
         default: 0

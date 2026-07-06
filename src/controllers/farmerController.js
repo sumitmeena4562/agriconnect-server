@@ -7,7 +7,7 @@ const ErrorResponse = require('../utils/errorResponse');
 // @desc    Register a new farmer with a User account and FarmerProfile
 // @access  Public
 const registerFarmer = asyncHandler(async (req, res, next) => {
-    const { phone, email, password, name, state, district, village, landSize, landUnit, crops, irrigation, authProvider, googleId } = req.body;
+    const { phone, email, password, name, state, district, village, landSize, landUnit, crops, irrigation, authProvider, googleId, lat, lng } = req.body;
 
     // Check if user already exists
     const userExists = await User.findOne({ phone });
@@ -46,7 +46,11 @@ const registerFarmer = asyncHandler(async (req, res, next) => {
             location: {
                 state,
                 district,
-                village
+                village,
+                coordinates: {
+                    lat: lat || undefined,
+                    lng: lng || undefined
+                }
             },
             farmDetails: {
                 landSize,

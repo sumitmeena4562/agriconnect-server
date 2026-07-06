@@ -9,7 +9,11 @@ const farmerProfileSchema = new mongoose.Schema({
     location: {
         state: { type: String, required: true },
         district: { type: String, required: true },
-        village: { type: String, required: true }
+        village: { type: String, required: true },
+        coordinates: {
+            lat: { type: Number },
+            lng: { type: Number }
+        }
     },
     farmDetails: {
         landSize: { type: Number, required: true },

@@ -411,7 +411,7 @@ const verifyLoginOtp = asyncHandler(async (req, res, next) => {
 // @desc    Register a new Vendor (Aggregator)
 // @access  Public
 const registerVendor = asyncHandler(async (req, res, next) => {
-    const { phone, email, password, name, businessName, gstNumber, interestedCategories, godownAddress, city, state } = req.body;
+    const { phone, email, password, name, businessName, gstNumber, interestedCategories, godownAddress, city, state, lat, lng } = req.body;
 
     // Check if user already exists
     const userExists = await User.findOne({ phone });
@@ -447,7 +447,11 @@ const registerVendor = asyncHandler(async (req, res, next) => {
         interestedCategories: interestedCategories || [],
         godownAddress: godownAddress || '',
         city: city || '',
-        state: state || ''
+        state: state || '',
+        coordinates: {
+            lat: lat || undefined,
+            lng: lng || undefined
+        }
     });
 
     // Generate JWT Token

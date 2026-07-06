@@ -42,6 +42,8 @@ const registerFarmerSchema = z.object({
     state: z.string().min(1, 'State is required'),
     district: z.string().min(3, 'District must be at least 3 characters'),
     village: z.string().min(3, 'Village must be at least 3 characters'),
+    lat: z.union([z.string(), z.number()]).transform(val => parseFloat(val)).optional(),
+    lng: z.union([z.string(), z.number()]).transform(val => parseFloat(val)).optional(),
 
     // Farm Details
     landSize: z.union([z.string(), z.number()]).transform(val => parseFloat(val)).refine(val => !isNaN(val) && val > 0, { message: 'Land size must be a positive number' }),
@@ -71,7 +73,9 @@ const registerVendorSchema = z.object({
     
     godownAddress: z.string().min(5, 'Delivery address is too short'),
     city: z.string().min(2, 'City is required'),
-    state: z.string().min(2, 'State is required')
+    state: z.string().min(2, 'State is required'),
+    lat: z.union([z.string(), z.number()]).transform(val => parseFloat(val)).optional(),
+    lng: z.union([z.string(), z.number()]).transform(val => parseFloat(val)).optional()
 });
 
 // Schema for /api/auth/login
@@ -119,6 +123,10 @@ const updateFarmerProfileSchema = z.object({
         state:    z.string().min(2, 'State is required').optional(),
         district: z.string().min(2, 'District is required').optional(),
         village:  z.string().optional(),
+        coordinates: z.object({
+            lat: z.union([z.string(), z.number()]).transform(val => parseFloat(val)).optional(),
+            lng: z.union([z.string(), z.number()]).transform(val => parseFloat(val)).optional(),
+        }).optional(),
     }).optional(),
     farmDetails: z.object({
         landSize:   z.union([z.string(), z.number()]).transform(v => parseFloat(v)).refine(v => !isNaN(v) && v > 0, { message: 'Land size must be positive' }).optional(),
