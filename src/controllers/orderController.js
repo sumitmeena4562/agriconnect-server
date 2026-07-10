@@ -676,14 +676,14 @@ const dispatchOrder = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Only accepted orders can be dispatched', 400);
     }
 
-    if (order.deliveryStatus === 'In Transit') {
+    if (['Out For Delivery', 'Partially Delivered'].includes(order.deliveryStatus)) {
         throw new ErrorResponse('Order is already in transit', 400);
     }
 
     if (driverId === 'self') {
         order.driver = null;
         order.dispatchTime = new Date();
-        order.deliveryStatus = 'In Transit';
+        order.deliveryStatus = 'Out For Delivery';
         await order.save();
 
         // Broadcast SSE update
@@ -726,10 +726,10 @@ const dispatchOrder = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Driver is currently on another delivery', 400);
     }
 
-    // Assign driver and set In Transit status
+    // Assign driver and set Out For Delivery status
     order.driver = driver._id;
     order.dispatchTime = new Date();
-    order.deliveryStatus = 'In Transit';
+    order.deliveryStatus = 'Out For Delivery';
     await order.save();
 
     // Mark driver status as busy
@@ -807,7 +807,7 @@ const getLiveTracking = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Not authorized to track this order', 403);
     }
 
-    const activeTransitStatuses = ['In Transit', 'Arrived', 'Completed', 'Out For Delivery', 'Partially Delivered'];
+    const activeTransitStatuses = ['Out For Delivery', 'Arrived', 'Completed', 'Partially Delivered'];
     if (!activeTransitStatuses.includes(order.deliveryStatus)) {
         return res.status(200).json({
             success: true,
@@ -856,7 +856,7 @@ const getLiveTracking = asyncHandler(async (req, res) => {
         currentCoords = routePoints[numPoints];
         etaSeconds = 0;
         status = 'Arrived';
-        if (order.deliveryStatus === 'In Transit') {
+        if (order.deliveryStatus === 'Out For Delivery') {
             order.deliveryStatus = 'Arrived';
             await order.save();
         }
@@ -937,7 +937,7 @@ const getRouteSuggestions = asyncHandler(async (req, res) => {
     // Fetch all active orders currently assigned to this driver to calculate remaining capacity
     const activeOrders = await OrderRequest.find({
         driver: primaryOrder.driver._id,
-        deliveryStatus: { $in: ['In Transit', 'Arrived'] }
+        deliveryStatus: { $in: ['Out For Delivery', 'Partially Delivered', 'Arrived'] }
     });
     const totalLoaded = activeOrders.reduce((sum, o) => sum + (o.requestedQuantity || 0), 0);
     const remainingCapacity = (primaryOrder.driver.payloadCapacity || 0) - totalLoaded;
@@ -1002,7 +1002,7 @@ const acceptConsolidation = asyncHandler(async (req, res) => {
     // Double check driver remaining capacity before accepting
     const activeOrders = await OrderRequest.find({
         driver: primaryOrder.driver._id,
-        deliveryStatus: { $in: ['In Transit', 'Arrived'] }
+        deliveryStatus: { $in: ['Out For Delivery', 'Partially Delivered', 'Arrived'] }
     });
     const totalLoaded = activeOrders.reduce((sum, o) => sum + (o.requestedQuantity || 0), 0);
     const remainingCapacity = (primaryOrder.driver.payloadCapacity || 0) - totalLoaded;
@@ -1019,7 +1019,7 @@ const acceptConsolidation = asyncHandler(async (req, res) => {
         }),
         OrderRequest.findByIdAndUpdate(addonOrderId, {
             driver:              primaryOrder.driver._id,
-            deliveryStatus:      'In Transit',
+            deliveryStatus:      'Out For Delivery',
             dispatchTime:        now,
             consolidationStatus: 'addon',
             $addToSet:           { consolidatedWith: primaryOrderId }
@@ -1032,8 +1032,8 @@ const acceptConsolidation = asyncHandler(async (req, res) => {
     await createNotification(addonOrder.vendor, primaryOrder.driver._id, addonOrderId, 'ORDER_UPDATED',
         `Your order is being picked up in a consolidated shipment. Driver: ${primaryOrder.driver.name}`);
 
-    sseManager.sendToUser(addonOrder.farmer, 'ORDER_UPDATED', { orderId: addonOrderId, deliveryStatus: 'In Transit' });
-    sseManager.sendToUser(addonOrder.vendor, 'ORDER_UPDATED', { orderId: addonOrderId, deliveryStatus: 'In Transit' });
+    sseManager.sendToUser(addonOrder.farmer, 'ORDER_UPDATED', { orderId: addonOrderId, deliveryStatus: 'Out For Delivery' });
+    sseManager.sendToUser(addonOrder.vendor, 'ORDER_UPDATED', { orderId: addonOrderId, deliveryStatus: 'Out For Delivery' });
 
     res.json({ success: true, message: 'Order consolidated successfully' });
 });
