@@ -57,8 +57,13 @@ const orderRequestSchema = new mongoose.Schema({
     },
     deliveryStatus: {
         type: String,
-        enum: ['Pending', 'Assigned', 'In Transit', 'Arrived', 'Completed'],
+        enum: ['Pending', 'Batch Created', 'Driver Assigned', 'Out For Delivery', 'Partially Delivered', 'Completed'],
         default: 'Pending'
+    },
+    deliveryBatchId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'DeliveryBatch',
+        default: null
     },
     // ── Payment Record (Option B — no gateway required) ──────────────
     payment: {
