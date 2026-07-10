@@ -919,7 +919,13 @@ const getRouteSuggestions = asyncHandler(async (req, res) => {
         return res.status(404).json({ success: false, message: 'Primary order or driver not found' });
     }
 
-    const remainingCapacity = (primaryOrder.driver.payloadCapacity || 0) - (primaryOrder.requestedQuantity || 0);
+    // Fetch all active orders currently assigned to this driver to calculate remaining capacity
+    const activeOrders = await OrderRequest.find({
+        driver: primaryOrder.driver._id,
+        deliveryStatus: { $in: ['In Transit', 'Arrived'] }
+    });
+    const totalLoaded = activeOrders.reduce((sum, o) => sum + (o.requestedQuantity || 0), 0);
+    const remainingCapacity = (primaryOrder.driver.payloadCapacity || 0) - totalLoaded;
 
     const candidateOrders = await OrderRequest.find({
         _id:                { $ne: orderId },
@@ -978,6 +984,18 @@ const acceptConsolidation = asyncHandler(async (req, res) => {
     if (!primaryOrder.driver) throw new ErrorResponse('No driver on primary order', 400);
     if (addonOrder.driver)    throw new ErrorResponse('Addon order already has a driver', 400);
 
+    // Double check driver remaining capacity before accepting
+    const activeOrders = await OrderRequest.find({
+        driver: primaryOrder.driver._id,
+        deliveryStatus: { $in: ['In Transit', 'Arrived'] }
+    });
+    const totalLoaded = activeOrders.reduce((sum, o) => sum + (o.requestedQuantity || 0), 0);
+    const remainingCapacity = (primaryOrder.driver.payloadCapacity || 0) - totalLoaded;
+
+    if (addonOrder.requestedQuantity > remainingCapacity) {
+        throw new ErrorResponse('Insufficient vehicle capacity to carry this addon order', 400);
+    }
+
     const now = new Date();
     await Promise.all([
         OrderRequest.findByIdAndUpdate(primaryOrderId, {
@@ -1005,6 +1023,54 @@ const acceptConsolidation = asyncHandler(async (req, res) => {
     res.json({ success: true, message: 'Order consolidated successfully' });
 });
 
+// @desc  Get consolidation info for an order (Public endpoint for driver tracking page)
+// @route GET /api/orders/:id/consolidation
+// @access Public
+const getConsolidationInfo = asyncHandler(async (req, res) => {
+    const order = await OrderRequest.findById(req.params.id)
+        .populate({
+            path: 'consolidatedWith',
+            select: 'crop farmer vendor requestedQuantity consolidationStatus deliveryStatus status',
+            populate: [
+                { path: 'crop', select: 'name unit' },
+                { path: 'farmer', select: 'name phone' },
+                { path: 'vendor', select: 'name phone' }
+            ]
+        });
+
+    if (!order) throw new ErrorResponse('Order not found', 404);
+
+    const attachCoords = async (obj) => {
+        if (obj.farmer) {
+            const farmerProfile = await FarmerProfile.findOne({ user: obj.farmer._id || obj.farmer });
+            if (farmerProfile && farmerProfile.location && farmerProfile.location.coordinates) {
+                obj.farmerCoordinates = farmerProfile.location.coordinates;
+            }
+        }
+        if (obj.vendor) {
+            const vendorProfile = await VendorProfile.findOne({ user: obj.vendor._id || obj.vendor });
+            if (vendorProfile && vendorProfile.location && vendorProfile.location.coordinates) {
+                obj.vendorCoordinates = vendorProfile.location.coordinates;
+            }
+        }
+    };
+
+    const orderObj = order.toObject();
+    await attachCoords(orderObj);
+
+    if (orderObj.consolidatedWith && orderObj.consolidatedWith.length > 0) {
+        await Promise.all(orderObj.consolidatedWith.map(async (addon) => {
+            await attachCoords(addon);
+        }));
+    }
+
+    res.json({
+        success: true,
+        consolidationStatus: orderObj.consolidationStatus,
+        consolidatedWith: orderObj.consolidatedWith || []
+    });
+});
+
 module.exports = {
     createOrderRequest,
     getOrders,
@@ -1014,6 +1080,7 @@ module.exports = {
     dispatchOrder,
     getLiveTracking,
     getRouteSuggestions,
-    acceptConsolidation
+    acceptConsolidation,
+    getConsolidationInfo
 };
 

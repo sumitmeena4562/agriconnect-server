@@ -9,7 +9,8 @@ const {
     dispatchOrder,
     getLiveTracking,
     getRouteSuggestions,
-    acceptConsolidation
+    acceptConsolidation,
+    getConsolidationInfo
 } = require('../controllers/orderController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 const validateRequest = require('../middleware/validateRequest');
@@ -23,6 +24,7 @@ const {
 // Route Consolidation (Milk Run) routes (Public for driver console)
 router.get('/route-suggestions',    getRouteSuggestions);
 router.post('/:id/consolidate',     acceptConsolidation);
+router.get('/:id/consolidation',     getConsolidationInfo);
 
 // All order routes require authentication
 router.use(protect);
