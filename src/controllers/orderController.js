@@ -132,6 +132,13 @@ const getOrders = asyncHandler(async (req, res) => {
             .populate('vendor', 'name phone')
             .populate('driver', 'name phone vehicleNumber vehicleType')
             .populate({
+                path: 'deliveryBatchId',
+                populate: {
+                    path: 'driver',
+                    select: 'name phone vehicleNumber vehicleType'
+                }
+            })
+            .populate({
                 path: 'consolidatedWith',
                 select: 'crop farmer vendor requestedQuantity offeredPrice consolidationStatus deliveryStatus status',
                 populate: [
@@ -784,7 +791,15 @@ const fetchOmsrRoute = async (startLat, startLng, endLat, endLng) => {
 // @route   GET /api/orders/:id/tracking
 // @access  Private
 const getLiveTracking = asyncHandler(async (req, res) => {
-    const order = await OrderRequest.findById(req.params.id).populate('driver');
+    const order = await OrderRequest.findById(req.params.id)
+        .populate('driver')
+        .populate({
+            path: 'deliveryBatchId',
+            populate: {
+                path: 'driver',
+                select: 'name phone vehicleNumber vehicleType'
+            }
+        });
     if (!order) throw new ErrorResponse('Order not found', 404);
 
     // Verify user is farmer or vendor of this order
@@ -792,7 +807,8 @@ const getLiveTracking = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Not authorized to track this order', 403);
     }
 
-    if (order.deliveryStatus !== 'In Transit' && order.deliveryStatus !== 'Arrived' && order.deliveryStatus !== 'Completed') {
+    const activeTransitStatuses = ['In Transit', 'Arrived', 'Completed', 'Out For Delivery', 'Partially Delivered'];
+    if (!activeTransitStatuses.includes(order.deliveryStatus)) {
         return res.status(200).json({
             success: true,
             deliveryStatus: order.deliveryStatus,
@@ -800,7 +816,6 @@ const getLiveTracking = asyncHandler(async (req, res) => {
         });
     }
 
-    // Deterministic Start and End coordinates based on order ID to simulate route
     const id = order._id.toString();
     const seed1 = id.charCodeAt(id.length - 1) || 0;
     const seed2 = id.charCodeAt(id.length - 2) || 0;

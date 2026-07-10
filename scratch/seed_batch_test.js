@@ -16,7 +16,7 @@ const seedBatchData = async () => {
         await connectDB();
         console.log('Connected to MongoDB...');
 
-        // Find or create Sumit meena (FARMER)
+        // Find or use Sumit meena (FARMER)
         let sumitFarmer = await User.findOne({ 
             $or: [
                 { phone: '6261652446' }, 
@@ -38,7 +38,7 @@ const seedBatchData = async () => {
             sumitFarmer.role = 'FARMER';
             sumitFarmer.kycStatus = 'Approved';
             await sumitFarmer.save();
-            console.log('Using existing Sumit meena farmer user.');
+            console.log('Using existing Sumit meena farmer.');
         }
 
         // Clear other test collections to start fresh
@@ -50,178 +50,132 @@ const seedBatchData = async () => {
         await Crop.deleteMany({});
         await MockBankAccount.deleteMany({});
         
-        // Clean up other test users except Sumit meena
+        // Clean up other test users
         await User.deleteMany({ 
             _id: { $ne: sumitFarmer._id },
-            phone: { $in: ['8888800001', '8888800002', '8888800003'] } 
+            phone: { $in: ['8888800001', '8888800002', '8888800003', '8888800004', '8888800005'] } 
         });
 
-        // Create 3 fake Vendors
-        console.log('Creating fake vendors...');
-        const vendorA = await User.create({
-            phone: '8888800001',
-            name: 'Amit Gupta (Vendor A)',
-            role: 'VENDOR',
-            password: 'password123',
-            kycStatus: 'Approved'
-        });
-        const vendorB = await User.create({
-            phone: '8888800002',
-            name: 'Sumit Sharma (Vendor B)',
-            role: 'VENDOR',
-            password: 'password123',
-            kycStatus: 'Approved'
-        });
-        const vendorC = await User.create({
-            phone: '8888800003',
-            name: 'Vijay Verma (Vendor C)',
-            role: 'VENDOR',
-            password: 'password123',
-            kycStatus: 'Approved'
-        });
+        console.log('Creating 5 Fake Vendors along a single route in Indore...');
+        const vendorsData = [
+            { phone: '8888800001', name: 'Indore Fresh Store (Vendor 1)', lat: 22.7250, lng: 75.8650, addr: 'A.B. Road, Stop 1, Indore' },
+            { phone: '8888800002', name: 'Malwa Veggies (Vendor 2)', lat: 22.7350, lng: 75.8750, addr: 'A.B. Road, Stop 2, Indore' },
+            { phone: '8888800003', name: 'Chappan Grocery (Vendor 3)', lat: 22.7450, lng: 75.8850, addr: 'A.B. Road, Stop 3, Indore' },
+            { phone: '8888800004', name: 'Rajwada Greens (Vendor 4)', lat: 22.7550, lng: 75.8950, addr: 'A.B. Road, Stop 4, Indore' },
+            { phone: '8888800005', name: 'Sarafa Organic Mart (Vendor 5)', lat: 22.7650, lng: 75.9050, addr: 'A.B. Road, Stop 5, Indore' }
+        ];
 
-        // Create Mock Bank Accounts
-        await MockBankAccount.create([
-            { user: sumitFarmer._id, accountNumber: '1111111111', accountHolderName: sumitFarmer.name, balance: 80000 },
-            { user: vendorA._id, accountNumber: '9999999991', accountHolderName: vendorA.name, balance: 250000 },
-            { user: vendorB._id, accountNumber: '9999999992', accountHolderName: vendorB.name, balance: 150000 },
-            { user: vendorC._id, accountNumber: '9999999993', accountHolderName: vendorC.name, balance: 180000 }
-        ]);
+        const vendors = [];
+        for (const data of vendorsData) {
+            const user = await User.create({
+                phone: data.phone,
+                name: data.name,
+                role: 'VENDOR',
+                password: 'password123',
+                kycStatus: 'Approved'
+            });
+            vendors.push(user);
 
-        console.log('Creating profiles...');
-        // Set Sumit's Farm coordinates (Dispatch Origin) in Gurugram
+            await VendorProfile.create({
+                user: user._id,
+                businessName: data.name.split(' (')[0],
+                godownAddress: data.addr,
+                city: 'Indore',
+                state: 'Madhya Pradesh',
+                coordinates: { lat: data.lat, lng: data.lng },
+                interestedCategories: ['Vegetables']
+            });
+
+            await MockBankAccount.create({
+                user: user._id,
+                accountNumber: `999990000${data.phone.slice(-1)}`,
+                accountHolderName: user.name,
+                balance: 200000
+            });
+        }
+
+        // Create Farmer Profile and Bank Account for Sumit
         await FarmerProfile.create({
             user: sumitFarmer._id,
             location: {
-                state: 'Haryana',
-                district: 'Gurugram',
-                village: 'Badshahpur',
-                coordinates: { lat: 28.412, lng: 77.032 }
+                state: 'Madhya Pradesh',
+                district: 'Indore',
+                village: 'Vijay Nagar',
+                coordinates: { lat: 22.7196, lng: 75.8577 } // Dispatch Origin
             },
-            farmDetails: { landSize: 15, landUnit: 'Acres', crops: 'Tomato, Potato, Wheat', irrigation: 'Tubewell' },
+            farmDetails: { landSize: 15, landUnit: 'Acres', crops: 'Tomato, Potato, Onion, Cabbage, Cauliflower', irrigation: 'Tubewell' },
             isVerified: true
         });
 
-        // 3 Vendor Profiles with distinct coordinates representing delivery stops
-        await VendorProfile.create([
-            {
-                user: vendorA._id,
-                businessName: 'Gupta Fresh Store',
-                godownAddress: 'Sector 56 Market, Gurugram',
-                city: 'Gurugram',
-                state: 'Haryana',
-                coordinates: { lat: 28.459, lng: 77.072 },
-                interestedCategories: ['Vegetables', 'Grains']
-            },
-            {
-                user: vendorB._id,
-                businessName: 'Sharma Veggies',
-                godownAddress: 'Sector 49 Market, Gurugram',
-                city: 'Gurugram',
-                state: 'Haryana',
-                coordinates: { lat: 28.418, lng: 77.052 },
-                interestedCategories: ['Vegetables', 'Grains']
-            },
-            {
-                user: vendorC._id,
-                businessName: 'Vijay Traders',
-                godownAddress: 'Sector 45 Godowns, Gurugram',
-                city: 'Gurugram',
-                state: 'Haryana',
-                coordinates: { lat: 28.452, lng: 77.038 },
-                interestedCategories: ['Vegetables', 'Grains']
-            }
-        ]);
-
-        console.log('Creating different Vegetable Crops for Sumit...');
-        const cropA = await Crop.create({
-            farmerId: sumitFarmer._id,
-            name: 'Fresh Red Tomatoes',
-            category: 'Vegetables',
-            price: 30,
-            unit: 'Kg',
-            quantity: 2000,
-            location: 'Badshahpur Greenhouse 1',
-            variety: 'Desi Red',
-            harvestDate: new Date(),
-            farmingMethod: 'Organic',
-            qualityGrade: 'Grade A',
-            minOrderQuantity: 10,
-            logisticsOption: 'Transport Available',
-            availabilityStatus: 'Ready to Dispatch',
-            paymentTerms: 'Cash on Delivery',
-            images: [],
-            isAvailable: true
+        await MockBankAccount.create({
+            user: sumitFarmer._id,
+            accountNumber: '1111111111',
+            accountHolderName: sumitFarmer.name,
+            balance: 100000
         });
 
-        const cropB = await Crop.create({
-            farmerId: sumitFarmer._id,
-            name: 'Organic Potatoes',
-            category: 'Vegetables',
-            price: 20,
-            unit: 'Kg',
-            quantity: 3000,
-            location: 'Badshahpur Cold Room A',
-            variety: 'Kufri Jyoti',
-            harvestDate: new Date(),
-            farmingMethod: 'Conventional',
-            qualityGrade: 'Grade A',
-            minOrderQuantity: 20,
-            logisticsOption: 'Transport Available',
-            availabilityStatus: 'Ready to Dispatch',
-            paymentTerms: 'Cash on Delivery',
-            images: [],
-            isAvailable: true
-        });
+        console.log('Creating 5 different vegetable crops for Sumit...');
+        const cropsList = [
+            { name: 'Fresh Red Tomatoes', price: 30, variety: 'Desi Red' },
+            { name: 'Organic Potatoes', price: 20, variety: 'Kufri Jyoti' },
+            { name: 'Pink Onions', price: 35, variety: 'Nasik Pink' },
+            { name: 'Green Cabbage', price: 25, variety: 'Golden Acre' },
+            { name: 'Phool Gobhi (Cauliflower)', price: 40, variety: 'Snowball' }
+        ];
 
-        const cropC = await Crop.create({
-            farmerId: sumitFarmer._id,
-            name: 'Green Cabbage',
-            category: 'Vegetables',
-            price: 25,
-            unit: 'Kg',
-            quantity: 1500,
-            location: 'Badshahpur Field 3',
-            variety: 'Golden Acre',
-            harvestDate: new Date(),
-            farmingMethod: 'Conventional',
-            qualityGrade: 'Grade B',
-            minOrderQuantity: 15,
-            logisticsOption: 'Transport Available',
-            availabilityStatus: 'Ready to Dispatch',
-            paymentTerms: 'Cash on Delivery',
-            images: [],
-            isAvailable: true
-        });
+        const crops = [];
+        for (const c of cropsList) {
+            const crop = await Crop.create({
+                farmerId: sumitFarmer._id,
+                name: c.name,
+                category: 'Vegetables',
+                price: c.price,
+                unit: 'Kg',
+                quantity: 2000,
+                location: 'Indore Farm Warehouse',
+                coordinates: { lat: 22.7196, lng: 75.8577 }, // Crop pickup coordinates
+                variety: c.variety,
+                harvestDate: new Date(),
+                farmingMethod: 'Organic',
+                qualityGrade: 'Grade A',
+                minOrderQuantity: 10,
+                logisticsOption: 'Transport Available',
+                availabilityStatus: 'Ready to Dispatch',
+                paymentTerms: 'Cash on Delivery',
+                images: [],
+                isAvailable: true
+            });
+            crops.push(crop);
+        }
 
         console.log('Creating Drivers for Sumit\'s fleet...');
-        // Create Truck Driver
         const driverTruck = await Driver.create({
             farmer: sumitFarmer._id,
             name: 'Sher Singh (Truck Carrier)',
             phone: '9876500001',
-            vehicleNumber: 'HR-26-TR-9999',
+            vehicleNumber: 'MP-09-TR-9999',
             vehicleType: 'Mini Truck',
             payloadCapacity: 1500,
             status: 'Available'
         });
 
-        // Create Bike Driver
         const driverBike = await Driver.create({
             farmer: sumitFarmer._id,
             name: 'Rahul Kumar (Bike Carrier)',
             phone: '9876500002',
-            vehicleNumber: 'HR-26-BK-8888',
+            vehicleNumber: 'MP-09-BK-8888',
             vehicleType: 'Bike',
             payloadCapacity: 80,
             status: 'Available'
         });
 
-        console.log('Creating 3 Confirmed Orders from different vendors for Sumit\'s Crops...');
+        console.log('Creating 5 Confirmed Orders from different vendors for Sumit\'s Crops...');
         const ordersData = [
-            { crop: cropA._id, vendor: vendorA._id, qty: 100, price: 30 },
-            { crop: cropB._id, vendor: vendorB._id, qty: 120, price: 20 },
-            { crop: cropC._id, vendor: vendorC._id, qty: 60, price: 25 }
+            { crop: crops[0]._id, vendor: vendors[0]._id, qty: 100, price: 30 }, // Vendor 1
+            { crop: crops[1]._id, vendor: vendors[1]._id, qty: 120, price: 20 }, // Vendor 2
+            { crop: crops[2]._id, vendor: vendors[2]._id, qty: 150, price: 35 }, // Vendor 3
+            { crop: crops[3]._id, vendor: vendors[3]._id, qty: 80, price: 25 },  // Vendor 4
+            { crop: crops[4]._id, vendor: vendors[4]._id, qty: 90, price: 40 }   // Vendor 5
         ];
 
         for (let i = 0; i < ordersData.length; i++) {
@@ -247,19 +201,24 @@ const seedBatchData = async () => {
             });
         }
 
-        console.log('\n=========================================');
-        console.log('✅ DATABASE SEEDED SUCCESSFULLY FOR SUMIT MEENA!');
-        console.log('=========================================');
-        console.log(`Farmer Account: Sumit meena (ID: ${sumitFarmer._id})`);
-        console.log(`Email:          ${sumitFarmer.email}`);
-        console.log(`Phone:          ${sumitFarmer.phone}`);
-        console.log('-----------------------------------------');
+        console.log('\n================================================================');
+        console.log('✅ 5-VENDOR SEQUENTIAL ROUTE SEEDED SUCCESSFULLY FOR SUMIT MEENA!');
+        console.log('================================================================');
+        console.log(`Farmer Account: Sumit meena (Phone: 6261652446 / Password: password123)`);
+        console.log('----------------------------------------------------------------');
+        console.log('Seeded Vegetables: Tomatoes, Potatoes, Onions, Cabbage, Cauliflower');
+        console.log('----------------------------------------------------------------');
+        console.log('Vendors Route Sequence (A.B. Road, Indore):');
+        console.log('1. Indore Fresh Store (Vendor 1) ➔ lat: 22.7250, lng: 75.8650');
+        console.log('2. Malwa Veggies (Vendor 2)       ➔ lat: 22.7350, lng: 75.8750');
+        console.log('3. Chappan Grocery (Vendor 3)    ➔ lat: 22.7450, lng: 75.8850');
+        console.log('4. Rajwada Greens (Vendor 4)     ➔ lat: 22.7550, lng: 75.8950');
+        console.log('5. Sarafa Organic Mart (Vendor 5)➔ lat: 22.7650, lng: 75.9050');
+        console.log('----------------------------------------------------------------');
         console.log('Drivers:');
         console.log(`- Sher Singh (Truck Carrier): ID: ${driverTruck._id}`);
         console.log(`- Rahul Kumar (Bike Carrier):  ID: ${driverBike._id}`);
-        console.log('-----------------------------------------');
-        console.log('3 Confirmed test orders (Tomato, Potato, Cabbage) are ready in your dashboard!');
-        console.log('=========================================\n');
+        console.log('================================================================\n');
 
         process.exit(0);
     } catch (err) {

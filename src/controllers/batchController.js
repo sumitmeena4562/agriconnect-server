@@ -36,7 +36,7 @@ const optimizeStops = (orders, startLat = 28.6139, startLng = 77.2090) => {
         orderId: o._id,
         stopType: 'delivery',
         coordinates: o.vendorCoordinates,
-        address: o.crop?.location || 'Vendor Location'
+        address: o.vendorAddress || `${o.vendor?.name || 'Vendor'}'s Shop`
     }));
 
     const optimized = [];
@@ -117,6 +117,7 @@ const autoGroupOrders = asyncHandler(async (req, res) => {
         orderObj.farmerCoordinates = order.crop?.coordinates || farmerProfile?.location?.coordinates || { lat: 22.7196, lng: 75.8577 };
         orderObj.vendorCoordinates = vendorProfile?.coordinates || vendorProfile?.location?.coordinates || { lat: 28.61, lng: 77.20 };
         orderObj.farmerAddress = order.crop?.location || farmerProfile?.location?.address || 'Farmer Farm';
+        orderObj.vendorAddress = vendorProfile?.godownAddress || `${vendorProfile?.businessName || order.vendor?.name || 'Vendor'}'s Shop`;
         return orderObj;
     }));
 
