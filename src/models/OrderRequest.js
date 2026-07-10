@@ -84,7 +84,17 @@ const orderRequestSchema = new mongoose.Schema({
         },
         paidAt:     { type: Date },
         verifiedAt: { type: Date }
-    }
+    },
+    // ── Route Consolidation (Milk Run) Fields ─────────────────────────
+    consolidationStatus: {
+        type: String,
+        enum: ['standalone', 'primary', 'addon'],
+        default: 'standalone'
+    },
+    consolidatedWith: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'OrderRequest'
+    }]
 }, { timestamps: true });
 
 orderRequestSchema.index({ farmer: 1, createdAt: -1 });

@@ -131,6 +131,15 @@ const getOrders = asyncHandler(async (req, res) => {
             .populate('farmer', 'name phone location')
             .populate('vendor', 'name phone')
             .populate('driver', 'name phone vehicleNumber vehicleType')
+            .populate({
+                path: 'consolidatedWith',
+                select: 'crop farmer vendor requestedQuantity offeredPrice consolidationStatus deliveryStatus status',
+                populate: [
+                    { path: 'crop', select: 'name unit price' },
+                    { path: 'farmer', select: 'name phone' },
+                    { path: 'vendor', select: 'name phone' }
+                ]
+            })
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit),
@@ -141,18 +150,29 @@ const getOrders = asyncHandler(async (req, res) => {
     const ordersWithCoordinates = await Promise.all(orders.map(async (order) => {
         const orderObj = order.toObject();
 
-        if (order.farmer) {
-            const farmerProfile = await FarmerProfile.findOne({ user: order.farmer._id });
-            if (farmerProfile && farmerProfile.location && farmerProfile.location.coordinates) {
-                orderObj.farmerCoordinates = farmerProfile.location.coordinates;
+        const attachCoords = async (obj) => {
+            if (obj.farmer) {
+                const farmerProfile = await FarmerProfile.findOne({ user: obj.farmer._id || obj.farmer });
+                if (farmerProfile && farmerProfile.location && farmerProfile.location.coordinates) {
+                    obj.farmerCoordinates = farmerProfile.location.coordinates;
+                }
             }
-        }
+            if (obj.vendor) {
+                const vendorProfile = await VendorProfile.findOne({ user: obj.vendor._id || obj.vendor });
+                if (vendorProfile && vendorProfile.location && vendorProfile.location.coordinates) {
+                    obj.vendorCoordinates = vendorProfile.location.coordinates;
+                }
+            }
+        };
 
-        if (order.vendor) {
-            const vendorProfile = await VendorProfile.findOne({ user: order.vendor._id });
-            if (vendorProfile && vendorProfile.location && vendorProfile.location.coordinates) {
-                orderObj.vendorCoordinates = vendorProfile.location.coordinates;
-            }
+        // Attach coordinates to main order
+        await attachCoords(orderObj);
+
+        // Attach coordinates to consolidated (addon) orders
+        if (orderObj.consolidatedWith && orderObj.consolidatedWith.length > 0) {
+            await Promise.all(orderObj.consolidatedWith.map(async (addon) => {
+                await attachCoords(addon);
+            }));
         }
 
         return orderObj;
@@ -850,6 +870,141 @@ const getLiveTracking = asyncHandler(async (req, res) => {
     });
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE CONSOLIDATION — MILK RUN
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Haversine distance between two lat/lng points in km */
+const haversineKm = (lat1, lng1, lat2, lng2) => {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+};
+
+/** Min distance (km) from a point to the nearest segment of a polyline [[lat,lng],...] */
+const pointToPolylineKm = (pLat, pLng, polyline) => {
+    let minDist = Infinity;
+    for (let i = 0; i < polyline.length - 1; i++) {
+        const [aLat, aLng] = polyline[i];
+        const [bLat, bLng] = polyline[i + 1];
+        const dx = bLat - aLat, dy = bLng - aLng;
+        const lenSq = dx * dx + dy * dy;
+        let t = lenSq === 0 ? 0 : ((pLat - aLat) * dx + (pLng - aLng) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+        const d = haversineKm(pLat, pLng, aLat + t * dx, aLng + t * dy);
+        if (d < minDist) minDist = d;
+    }
+    return minDist;
+};
+
+// @desc  Get pending orders whose farm lies near an active driver's route
+// @route GET /api/orders/route-suggestions
+// @access Private
+const getRouteSuggestions = asyncHandler(async (req, res) => {
+    const { orderId, routePoints } = req.query;
+    if (!orderId || !routePoints) {
+        return res.status(400).json({ success: false, message: 'orderId and routePoints are required' });
+    }
+
+    const polyline = JSON.parse(routePoints);
+    const DETOUR_THRESHOLD_KM = 35;
+
+    const primaryOrder = await OrderRequest.findById(orderId)
+        .populate('driver', 'payloadCapacity vehicleType name phone');
+    if (!primaryOrder || !primaryOrder.driver) {
+        return res.status(404).json({ success: false, message: 'Primary order or driver not found' });
+    }
+
+    const remainingCapacity = (primaryOrder.driver.payloadCapacity || 0) - (primaryOrder.requestedQuantity || 0);
+
+    const candidateOrders = await OrderRequest.find({
+        _id:                { $ne: orderId },
+        status:             'Accepted',
+        deliveryStatus:     'Pending',
+        driver:             null,
+        consolidationStatus: 'standalone'
+    })
+        .populate('crop',   'name category unit')
+        .populate('farmer', 'name phone')
+        .populate('vendor', 'name phone');
+
+    const suggestions = [];
+    for (const order of candidateOrders) {
+        const farmerProfile = await FarmerProfile.findOne({ user: order.farmer._id });
+        if (!farmerProfile?.location?.coordinates) continue;
+
+        const { lat: fLat, lng: fLng } = farmerProfile.location.coordinates;
+        const distFromRoute = pointToPolylineKm(fLat, fLng, polyline);
+
+        if (distFromRoute > DETOUR_THRESHOLD_KM) continue;
+        if (order.requestedQuantity > remainingCapacity) continue;
+
+        const vendorProfile = await VendorProfile.findOne({ user: order.vendor._id });
+        suggestions.push({
+            _id:               order._id,
+            crop:              order.crop,
+            farmer:            { name: order.farmer.name, phone: order.farmer.phone },
+            vendor:            { name: order.vendor.name, phone: order.vendor.phone },
+            requestedQuantity: order.requestedQuantity,
+            farmerCoordinates: { lat: fLat, lng: fLng },
+            vendorCoordinates: vendorProfile?.location?.coordinates || null,
+            detourKm:          Math.round(distFromRoute * 10) / 10,
+            remainingCapacityAfter: remainingCapacity - order.requestedQuantity
+        });
+        if (suggestions.length >= 3) break;
+    }
+
+    res.json({ success: true, data: suggestions, remainingCapacity });
+});
+
+// @desc  Driver accepts a route suggestion — consolidates both orders
+// @route POST /api/orders/:id/consolidate
+// @access Private
+const acceptConsolidation = asyncHandler(async (req, res) => {
+    const { id: addonOrderId } = req.params;
+    const { primaryOrderId }   = req.body;
+
+    const [primaryOrder, addonOrder] = await Promise.all([
+        OrderRequest.findById(primaryOrderId).populate('driver'),
+        OrderRequest.findById(addonOrderId)
+    ]);
+
+    if (!primaryOrder) throw new ErrorResponse('Primary order not found', 404);
+    if (!addonOrder)   throw new ErrorResponse('Addon order not found', 404);
+    if (!primaryOrder.driver) throw new ErrorResponse('No driver on primary order', 400);
+    if (addonOrder.driver)    throw new ErrorResponse('Addon order already has a driver', 400);
+
+    const now = new Date();
+    await Promise.all([
+        OrderRequest.findByIdAndUpdate(primaryOrderId, {
+            consolidationStatus: 'primary',
+            $addToSet: { consolidatedWith: addonOrderId }
+        }),
+        OrderRequest.findByIdAndUpdate(addonOrderId, {
+            driver:              primaryOrder.driver._id,
+            deliveryStatus:      'In Transit',
+            dispatchTime:        now,
+            consolidationStatus: 'addon',
+            $addToSet:           { consolidatedWith: primaryOrderId }
+        })
+    ]);
+
+    // Notify addon farmer & vendor
+    await createNotification(addonOrder.farmer, primaryOrder.driver._id, addonOrderId, 'ORDER_UPDATED',
+        `Driver ${primaryOrder.driver.name} (${primaryOrder.driver.vehicleNumber}) will pick up your order as part of a consolidated shipment.`);
+    await createNotification(addonOrder.vendor, primaryOrder.driver._id, addonOrderId, 'ORDER_UPDATED',
+        `Your order is being picked up in a consolidated shipment. Driver: ${primaryOrder.driver.name}`);
+
+    sseManager.sendToUser(addonOrder.farmer, 'ORDER_UPDATED', { orderId: addonOrderId, deliveryStatus: 'In Transit' });
+    sseManager.sendToUser(addonOrder.vendor, 'ORDER_UPDATED', { orderId: addonOrderId, deliveryStatus: 'In Transit' });
+
+    res.json({ success: true, message: 'Order consolidated successfully' });
+});
+
 module.exports = {
     createOrderRequest,
     getOrders,
@@ -857,6 +1012,8 @@ module.exports = {
     submitPayment,
     verifyPayment,
     dispatchOrder,
-    getLiveTracking
+    getLiveTracking,
+    getRouteSuggestions,
+    acceptConsolidation
 };
 
