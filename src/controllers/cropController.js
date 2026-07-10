@@ -5,6 +5,30 @@ const escapeRegExp = (string) => {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 };
 
+// Nominatim Address Lookup Fallback for backend geocoding
+const geocodeTextAddress = async (address) => {
+  if (!address) return null;
+  try {
+    const query = `${address}, India`;
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`, {
+      headers: {
+        'User-Agent': 'AgriConnectApp/1.0'
+      }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data && data.length > 0) {
+      return {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon)
+      };
+    }
+  } catch (err) {
+    console.error('Error during backend geocoding:', err.message);
+  }
+  return null;
+};
+
 // @desc    Add a new crop
 // @route   POST /api/crops
 // @access  Private (Farmer only)
@@ -13,6 +37,12 @@ const addCrop = asyncHandler(async (req, res) => {
     name, category, quantity, unit, price, harvestDate, description, images,
     variety, location, farmingMethod, qualityGrade, minOrderQuantity, logisticsOption, availabilityStatus, paymentTerms
   } = req.body;
+
+  // Resolve coordinates from location string
+  let coordinates;
+  if (location) {
+    coordinates = await geocodeTextAddress(location);
+  }
 
   const crop = await Crop.create({
     farmerId: req.user.id, // Set by protect middleware
@@ -25,6 +55,7 @@ const addCrop = asyncHandler(async (req, res) => {
     description,
     variety,
     location,
+    coordinates,
     farmingMethod,
     qualityGrade,
     minOrderQuantity,
@@ -177,6 +208,14 @@ const updateCrop = asyncHandler(async (req, res) => {
       updateData.status = 'Available';
     } else {
       updateData.status = 'Sold Out';
+    }
+  }
+
+  // Geocode new location if updated
+  if (updateData.location !== undefined && updateData.location !== crop.location) {
+    const coords = await geocodeTextAddress(updateData.location);
+    if (coords) {
+      updateData.coordinates = coords;
     }
   }
 

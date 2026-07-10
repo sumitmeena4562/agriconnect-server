@@ -113,9 +113,10 @@ const autoGroupOrders = asyncHandler(async (req, res) => {
         const farmerProfile = await FarmerProfile.findOne({ user: order.farmer._id });
         const vendorProfile = await VendorProfile.findOne({ user: order.vendor._id });
         
-        orderObj.farmerCoordinates = farmerProfile?.location?.coordinates || { lat: 28.42, lng: 77.01 };
-        orderObj.vendorCoordinates = vendorProfile?.location?.coordinates || { lat: 28.61, lng: 77.20 };
-        orderObj.farmerAddress = farmerProfile?.location?.address || 'Farmer Farm';
+        // Prioritize crop-specific coordinates, fallback to profile coordinates, fallback to default Indore coordinates
+        orderObj.farmerCoordinates = order.crop?.coordinates || farmerProfile?.location?.coordinates || { lat: 22.7196, lng: 75.8577 };
+        orderObj.vendorCoordinates = vendorProfile?.coordinates || vendorProfile?.location?.coordinates || { lat: 28.61, lng: 77.20 };
+        orderObj.farmerAddress = order.crop?.location || farmerProfile?.location?.address || 'Farmer Farm';
         return orderObj;
     }));
 

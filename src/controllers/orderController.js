@@ -159,8 +159,8 @@ const getOrders = asyncHandler(async (req, res) => {
             }
             if (obj.vendor) {
                 const vendorProfile = await VendorProfile.findOne({ user: obj.vendor._id || obj.vendor });
-                if (vendorProfile && vendorProfile.location && vendorProfile.location.coordinates) {
-                    obj.vendorCoordinates = vendorProfile.location.coordinates;
+                if (vendorProfile) {
+                    obj.vendorCoordinates = vendorProfile.coordinates || (vendorProfile.location && vendorProfile.location.coordinates);
                 }
             }
         };
@@ -1049,8 +1049,8 @@ const getConsolidationInfo = asyncHandler(async (req, res) => {
         }
         if (obj.vendor) {
             const vendorProfile = await VendorProfile.findOne({ user: obj.vendor._id || obj.vendor });
-            if (vendorProfile && vendorProfile.location && vendorProfile.location.coordinates) {
-                obj.vendorCoordinates = vendorProfile.location.coordinates;
+            if (vendorProfile) {
+                obj.vendorCoordinates = vendorProfile.coordinates || (vendorProfile.location && vendorProfile.location.coordinates);
             }
         }
     };

@@ -54,6 +54,10 @@ const cropSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  coordinates: {
+    lat: { type: Number },
+    lng: { type: Number }
+  },
   farmingMethod: {
     type: String,
     required: true,
