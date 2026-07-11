@@ -129,8 +129,22 @@ const deleteDriver = asyncHandler(async (req, res) => {
     });
 });
 
+const VehicleType = require('../models/VehicleType');
+
+// @desc    Get all predefined vehicle types
+// @route   GET /api/v1/drivers/vehicle-types
+// @access  Private (Farmer only)
+const getVehicleTypes = asyncHandler(async (req, res) => {
+    const types = await VehicleType.find().sort({ capacityKg: 1 });
+    res.status(200).json({
+        success: true,
+        data: types
+    });
+});
+
 module.exports = {
     getDrivers,
     createDriver,
-    deleteDriver
+    deleteDriver,
+    getVehicleTypes
 };

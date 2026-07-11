@@ -1,5 +1,5 @@
 const express = require('express');
-const { getDrivers, createDriver, deleteDriver } = require('../controllers/driverController');
+const { getDrivers, createDriver, deleteDriver, getVehicleTypes } = require('../controllers/driverController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 const router = express.Router();
@@ -7,6 +7,9 @@ const router = express.Router();
 // Apply auth protection and farmer role check to all driver routes
 router.use(protect);
 router.use(authorize('FARMER'));
+
+router.route('/vehicle-types')
+    .get(getVehicleTypes);
 
 router.route('/')
     .get(getDrivers)
