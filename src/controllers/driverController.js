@@ -27,7 +27,34 @@ const createDriver = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Not authorized. Farmers only.', 403);
     }
 
-    const { name, phone, vehicleNumber, vehicleType, payloadCapacity, licenseNumber, rcNumber, address, insuranceDoc, latitude, longitude } = req.body;
+    const { 
+        name, 
+        phone, 
+        vehicleNumber, 
+        vehicleType, 
+        payloadCapacity, 
+        licenseNumber, 
+        rcNumber, 
+        address, 
+        insuranceDoc, 
+        emergencyContactName,
+        emergencyContactPhone,
+        aadhaarNumber,
+        licenseClass,
+        licenseExpiry,
+        rcExpiry,
+        vehicleModel,
+        fuelType,
+        insurancePolicyNumber,
+        insuranceExpiry,
+        panNumber,
+        bankAccountName,
+        bankAccountNumber,
+        bankAccountIfsc,
+        upiId,
+        latitude, 
+        longitude 
+    } = req.body;
 
     if (!name || !phone || !vehicleNumber || !vehicleType || !payloadCapacity) {
         throw new ErrorResponse('Please provide name, phone, vehicle number, vehicle type, and payload capacity', 400);
@@ -44,6 +71,21 @@ const createDriver = asyncHandler(async (req, res) => {
         rcNumber,
         address,
         insuranceDoc,
+        emergencyContactName,
+        emergencyContactPhone,
+        aadhaarNumber,
+        licenseClass,
+        licenseExpiry,
+        rcExpiry,
+        vehicleModel,
+        fuelType,
+        insurancePolicyNumber,
+        insuranceExpiry,
+        panNumber,
+        bankAccountName,
+        bankAccountNumber,
+        bankAccountIfsc,
+        upiId,
         latitude: latitude || 28.6139,
         longitude: longitude || 77.2090
     });

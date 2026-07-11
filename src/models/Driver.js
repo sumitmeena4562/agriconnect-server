@@ -24,7 +24,7 @@ const driverSchema = new mongoose.Schema({
     },
     vehicleType: {
         type: String,
-        enum: ['Bike', 'Tractor', 'Mini Truck', 'Large Truck'],
+        enum: ['Bike', 'Tractor', 'Mini Truck', 'Large Truck', 'Pickup'],
         required: true
     },
     payloadCapacity: {
@@ -46,6 +46,66 @@ const driverSchema = new mongoose.Schema({
         trim: true
     },
     insuranceDoc: {
+        type: String,
+        trim: true
+    },
+    emergencyContactName: {
+        type: String,
+        trim: true
+    },
+    emergencyContactPhone: {
+        type: String,
+        trim: true
+    },
+    aadhaarNumber: {
+        type: String,
+        trim: true
+    },
+    licenseClass: {
+        type: String,
+        trim: true
+    },
+    licenseExpiry: {
+        type: Date
+    },
+    rcExpiry: {
+        type: Date
+    },
+    vehicleModel: {
+        type: String,
+        trim: true
+    },
+    fuelType: {
+        type: String,
+        enum: ['Diesel', 'CNG', 'Electric', 'Petrol'],
+        default: 'Diesel'
+    },
+    insurancePolicyNumber: {
+        type: String,
+        trim: true
+    },
+    insuranceExpiry: {
+        type: Date
+    },
+    panNumber: {
+        type: String,
+        trim: true,
+        uppercase: true
+    },
+    bankAccountName: {
+        type: String,
+        trim: true
+    },
+    bankAccountNumber: {
+        type: String,
+        trim: true
+    },
+    bankAccountIfsc: {
+        type: String,
+        trim: true,
+        uppercase: true
+    },
+    upiId: {
         type: String,
         trim: true
     },
