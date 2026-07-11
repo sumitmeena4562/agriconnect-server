@@ -201,7 +201,9 @@ const assignDriverToBatch = asyncHandler(async (req, res) => {
 
     // Vehicle capacity validations
     const orderCount = batch.orders.length;
-    const capacityLimit = driver.vehicleType === 'Bike' ? 5 : 20;
+    const VehicleType = require('../models/VehicleType');
+    const vehicleSpecs = await VehicleType.findOne({ vehicleName: driver.vehicleType });
+    const capacityLimit = vehicleSpecs ? vehicleSpecs.maxOrders : (driver.vehicleType === 'Bike' ? 5 : 20);
 
     if (orderCount > capacityLimit) {
         throw new ErrorResponse(
