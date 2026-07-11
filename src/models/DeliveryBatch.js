@@ -22,7 +22,8 @@ const deliveryBatchSchema = new mongoose.Schema({
             lng: { type: Number, required: true }
         },
         address: { type: String },
-        sequence: { type: Number, required: true }
+        sequence: { type: Number, required: true },        // delivery order (1 = first stop to visit)
+        loadingSequence: { type: Number, default: null }   // loading order (1 = load first → delivered last)
     }],
     batchStatus: {
         type: String,

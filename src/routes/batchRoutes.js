@@ -6,7 +6,8 @@ const {
     getActiveBatchForDriver,
     updateBatchStatus,
     deliverOrderInBatch,
-    getAllBatches
+    getAllBatches,
+    getBatchById
 } = require('../controllers/batchController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -18,5 +19,6 @@ router.get('/driver/active', getActiveBatchForDriver);
 router.patch('/:id/status', updateBatchStatus);
 router.patch('/:id/orders/:orderId/deliver', deliverOrderInBatch);
 router.get('/', getAllBatches);
+router.get('/:id', getBatchById);
 
 module.exports = router;

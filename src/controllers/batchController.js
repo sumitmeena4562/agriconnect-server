@@ -43,6 +43,7 @@ const optimizeStops = (orders, startLat = 28.6139, startLng = 77.2090) => {
     let currentLat = startLat;
     let currentLng = startLng;
     let seq = 1;
+    let totalDistance = 0;
 
     // 1. Optimize Pickups
     while (pickups.length > 0) {
@@ -56,7 +57,8 @@ const optimizeStops = (orders, startLat = 28.6139, startLng = 77.2090) => {
             }
         }
         const stop = pickups.splice(nearestIdx, 1)[0];
-        optimized.push({ ...stop, sequence: seq++ });
+        totalDistance += minDist;
+        optimized.push({ ...stop, sequence: seq++, loadingSequence: null }); // Pickups: no loading order needed
         currentLat = stop.coordinates.lat;
         currentLng = stop.coordinates.lng;
     }
@@ -73,21 +75,22 @@ const optimizeStops = (orders, startLat = 28.6139, startLng = 77.2090) => {
             }
         }
         const stop = deliveries.splice(nearestIdx, 1)[0];
+        totalDistance += minDist;
         optimized.push({ ...stop, sequence: seq++ });
         currentLat = stop.coordinates.lat;
         currentLng = stop.coordinates.lng;
     }
 
-    // Calculate total route distance
-    let totalDist = 0;
-    for (let i = 0; i < optimized.length - 1; i++) {
-        totalDist += haversineKm(
-            optimized[i].coordinates.lat, optimized[i].coordinates.lng,
-            optimized[i + 1].coordinates.lat, optimized[i + 1].coordinates.lng
-        );
-    }
+    // 3. Assign LIFO loadingSequence to delivery stops only
+    // LOGIC: seq=1 (nearest, 1st to deliver) → loaded LAST on truck → loadingSequence = totalDeliveries
+    //        seq=N (farthest, last to deliver) → loaded FIRST on truck → loadingSequence = 1
+    const deliveryStopsInRoute = optimized.filter(s => s.stopType === 'delivery');
+    const totalDeliveries = deliveryStopsInRoute.length;
+    deliveryStopsInRoute.forEach((stop, idx) => {
+        stop.loadingSequence = totalDeliveries - idx;
+    });
 
-    return { route: optimized, totalDistance: Math.round(totalDist * 10) / 10 };
+    return { route: optimized, totalDistance: Math.round(totalDistance * 10) / 10 };
 };
 
 // ── Controller Handlers ─────────────────────────────────────────────────────
@@ -369,11 +372,33 @@ const getAllBatches = asyncHandler(async (req, res) => {
     res.json({ success: true, data: batches });
 });
 
+// @desc    Get single batch by ID (for loading checklist)
+// @route   GET /api/batches/:id
+// @access  Private
+const getBatchById = asyncHandler(async (req, res) => {
+    const batch = await DeliveryBatch.findById(req.params.id)
+        .populate('driver')
+        .populate({
+            path: 'orders',
+            populate: [
+                { path: 'crop', select: 'name unit price images' },
+                { path: 'farmer', select: 'name phone' },
+                { path: 'vendor', select: 'name phone' }
+            ]
+        });
+
+    if (!batch) throw new ErrorResponse('Batch not found', 404);
+
+    res.json({ success: true, data: batch });
+});
+
 module.exports = {
     autoGroupOrders,
     assignDriverToBatch,
     getActiveBatchForDriver,
     updateBatchStatus,
     deliverOrderInBatch,
-    getAllBatches
+    getAllBatches,
+    getBatchById
 };
+
