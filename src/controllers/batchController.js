@@ -392,6 +392,68 @@ const getBatchById = asyncHandler(async (req, res) => {
     res.json({ success: true, data: batch });
 });
 
+// @desc    Update batch loading/delivery sequences & assignments (Load Planning)
+// @route   PUT /api/batches/:id/load-plan
+// @access  Private (Farmer / Admin)
+const updateBatchLoadPlan = asyncHandler(async (req, res, next) => {
+    const { optimizedRoute, orderIdsToRemove } = req.body;
+    let batch = await DeliveryBatch.findById(req.params.id);
+
+    if (!batch) {
+        return next(new ErrorResponse('Batch not found', 404));
+    }
+
+    // Handle order removal if requested
+    if (orderIdsToRemove && orderIdsToRemove.length > 0) {
+        // Filter out removed orders from batch.orders
+        batch.orders = batch.orders.filter(id => !orderIdsToRemove.includes(String(id)));
+
+        // Remove batch references from OrderRequest documents
+        await OrderRequest.updateMany(
+            { _id: { $in: orderIdsToRemove } },
+            { $unset: { deliveryBatchId: 1 } }
+        );
+
+        // If batch becomes empty, delete it
+        if (batch.orders.length === 0) {
+            await DeliveryBatch.findByIdAndDelete(req.params.id);
+            return res.json({ success: true, message: 'Batch deleted because all orders were removed.', data: null });
+        }
+    }
+
+    // Update optimizedRoute if provided
+    if (optimizedRoute) {
+        batch.optimizedRoute = optimizedRoute;
+
+        // Recalculate distance along the new route
+        let dist = 0;
+        for (let i = 0; i < optimizedRoute.length - 1; i++) {
+            const current = optimizedRoute[i].coordinates;
+            const nextStop = optimizedRoute[i+1].coordinates;
+            if (current && nextStop) {
+                dist += haversineKm(current.lat, current.lng, nextStop.lat, nextStop.lng);
+            }
+        }
+        batch.totalDistance = Math.round(dist * 10) / 10;
+    }
+
+    await batch.save();
+
+    // Populate and return updated batch
+    const updated = await DeliveryBatch.findById(req.params.id)
+        .populate('driver')
+        .populate({
+            path: 'orders',
+            populate: [
+                { path: 'crop', select: 'name unit price images' },
+                { path: 'farmer', select: 'name phone' },
+                { path: 'vendor', select: 'name phone' }
+            ]
+        });
+
+    res.json({ success: true, data: updated });
+});
+
 module.exports = {
     autoGroupOrders,
     assignDriverToBatch,
@@ -399,6 +461,7 @@ module.exports = {
     updateBatchStatus,
     deliverOrderInBatch,
     getAllBatches,
-    getBatchById
+    getBatchById,
+    updateBatchLoadPlan
 };
 

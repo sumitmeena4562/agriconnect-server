@@ -7,7 +7,8 @@ const {
     updateBatchStatus,
     deliverOrderInBatch,
     getAllBatches,
-    getBatchById
+    getBatchById,
+    updateBatchLoadPlan
 } = require('../controllers/batchController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -20,5 +21,6 @@ router.patch('/:id/status', updateBatchStatus);
 router.patch('/:id/orders/:orderId/deliver', deliverOrderInBatch);
 router.get('/', getAllBatches);
 router.get('/:id', getBatchById);
+router.put('/:id/load-plan', updateBatchLoadPlan);
 
 module.exports = router;
