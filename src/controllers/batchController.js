@@ -410,10 +410,13 @@ const updateBatchLoadPlan = asyncHandler(async (req, res, next) => {
         // Filter out removed orders from batch.orders
         batch.orders = batch.orders.filter(id => !orderIdsToRemove.includes(String(id)));
 
-        // Remove batch references from OrderRequest documents
+        // Remove batch/driver references and reset deliveryStatus to Pending
         await OrderRequest.updateMany(
             { _id: { $in: orderIdsToRemove } },
-            { $unset: { deliveryBatchId: 1 } }
+            { 
+                $unset: { deliveryBatchId: 1, driver: 1 },
+                $set: { deliveryStatus: 'Pending' }
+            }
         );
 
         // If batch becomes empty, delete it
