@@ -14,7 +14,7 @@ const getNotifications = asyncHandler(async (req, res) => {
     const notifications = await Notification.find({ recipient: req.user.id })
         .populate({
             path: 'order',
-            select: 'requestedQuantity offeredPrice status deliveryOTP crop',
+            select: 'requestedQuantity offeredPrice status +deliveryOTP crop',
             populate: {
                 path: 'crop',
                 select: 'name unit images'
@@ -90,7 +90,7 @@ const createNotification = async (recipient, sender, order, type, text) => {
         if (order) {
             await notification.populate({
                 path: 'order',
-                select: 'requestedQuantity offeredPrice status deliveryOTP crop',
+                select: 'requestedQuantity offeredPrice status +deliveryOTP crop',
                 populate: {
                     path: 'crop',
                     select: 'name unit images'

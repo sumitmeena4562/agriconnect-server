@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { encryptOTP, decryptOTP } = require('../utils/otpCrypto');
 
 const orderRequestSchema = new mongoose.Schema({
     crop: {
@@ -39,7 +40,10 @@ const orderRequestSchema = new mongoose.Schema({
         default: ''
     },
     deliveryOTP: {
-        type: String
+        type: String,
+        select: false,  // hidden by default in normal queries
+        set: encryptOTP, // encrypts before saving to DB
+        get: decryptOTP  // decrypts when reading from DB
     },
     status: {
         type: String,
@@ -100,11 +104,17 @@ const orderRequestSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: 'OrderRequest'
     }]
-}, { timestamps: true });
+}, { 
+    timestamps: true,
+    toJSON: { getters: true },
+    toObject: { getters: true }
+});
 
 orderRequestSchema.index({ farmer: 1, createdAt: -1 });
 orderRequestSchema.index({ vendor: 1, createdAt: -1 });
 orderRequestSchema.index({ crop: 1, vendor: 1, status: 1 });
+orderRequestSchema.index({ deliveryBatchId: 1 }); // for batch delivery queries
+orderRequestSchema.index({ deliveryStatus: 1, status: 1 }); // for auto-group filter
 
 const OrderRequest = mongoose.model('OrderRequest', orderRequestSchema);
 module.exports = OrderRequest;

@@ -10,17 +10,24 @@ const {
     getBatchById,
     updateBatchLoadPlan
 } = require('../controllers/batchController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, authorize } = require('../middleware/authMiddleware');
 
+// ── Public routes (drivers have no login account — they use shared link with driverId)
+router.get('/driver/active', getActiveBatchForDriver);
+router.patch('/:id/orders/:orderId/deliver', deliverOrderInBatch);
+
+// ── All other batch routes require authentication
 router.use(protect);
 
-router.post('/auto-group', autoGroupOrders);
-router.post('/:id/assign-driver', assignDriverToBatch);
-router.get('/driver/active', getActiveBatchForDriver);
+// ── Farmer-only routes (only FARMER role can create/manage batches)
+router.post('/auto-group', authorize('FARMER'), autoGroupOrders);
+router.post('/:id/assign-driver', authorize('FARMER'), assignDriverToBatch);
+router.put('/:id/load-plan', authorize('FARMER'), updateBatchLoadPlan);
+
+// ── Any authenticated user (farmer + vendor can view)
 router.patch('/:id/status', updateBatchStatus);
-router.patch('/:id/orders/:orderId/deliver', deliverOrderInBatch);
 router.get('/', getAllBatches);
 router.get('/:id', getBatchById);
-router.put('/:id/load-plan', updateBatchLoadPlan);
 
 module.exports = router;
+

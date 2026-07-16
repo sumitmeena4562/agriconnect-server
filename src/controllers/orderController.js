@@ -9,6 +9,7 @@ const { createNotification } = require('./notificationController');
 const sseManager = require('../utils/sseManager');
 const FarmerProfile = require('../models/FarmerProfile');
 const VendorProfile = require('../models/VendorProfile');
+const bcrypt = require('bcryptjs');
 
 // @desc    Send an order request to a farmer
 // @route   POST /api/orders
@@ -206,7 +207,8 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         throw new ErrorResponse('Invalid status', 400);
     }
 
-    const order = await OrderRequest.findById(req.params.id);
+    // Explicitly select deliveryOTP since it has select:false in schema
+    const order = await OrderRequest.findById(req.params.id).select('+deliveryOTP');
 
     if (!order) {
         throw new ErrorResponse('Order request not found', 404);
@@ -256,7 +258,8 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
         if (!order.deliveryOTP) {
             throw new ErrorResponse('Delivery OTP not found for this order. Please contact support.', 500);
         }
-        if (order.deliveryOTP !== otp.toString().trim()) {
+        const otpMatch = order.deliveryOTP === otp.toString().trim();
+        if (!otpMatch) {
             throw new ErrorResponse('Invalid delivery verification OTP. Please verify with the vendor.', 400);
         }
         if (!order.payment || order.payment.status !== 'Verified') {
@@ -286,9 +289,9 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
             await crop.save();
         }
 
-        // Generate 4-digit OTP for delivery verification
-        const otp = Math.floor(1000 + Math.random() * 9000).toString();
-        order.deliveryOTP = otp;
+        // Generate 4-digit OTP for delivery verification (Mongoose setter handles encryption at rest)
+        const rawOtp = Math.floor(1000 + Math.random() * 9000).toString();
+        order.deliveryOTP = rawOtp;
 
         // Auto-verify if Cash on Delivery (COD)
         if (crop.paymentTerms === 'Cash on Delivery') {

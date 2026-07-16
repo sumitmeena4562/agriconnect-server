@@ -4,6 +4,8 @@ const Driver = require('../models/Driver');
 const FarmerProfile = require('../models/FarmerProfile');
 const VendorProfile = require('../models/VendorProfile');
 const User = require('../models/User');
+const VehicleType = require('../models/VehicleType');
+const bcrypt = require('bcryptjs'); // for OTP hashing
 const { createNotification } = require('./notificationController');
 const asyncHandler = require('../middleware/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
@@ -110,19 +112,32 @@ const autoGroupOrders = asyncHandler(async (req, res) => {
         return res.status(200).json({ success: true, message: 'No orders available for batching', data: [] });
     }
 
-    // Enrich orders with coordinates
-    const enrichedOrders = await Promise.all(orders.map(async (order) => {
+    // ── Fix: Eliminate N+1 — bulk-load all FarmerProfiles + VendorProfiles in ONE query each ─
+    const farmerUserIds = [...new Set(orders.map(o => String(o.farmer._id)))];
+    const vendorUserIds = [...new Set(orders.map(o => String(o.vendor._id)))];
+
+    const [farmerProfiles, vendorProfiles] = await Promise.all([
+        FarmerProfile.find({ user: { $in: farmerUserIds } }),
+        VendorProfile.find({ user: { $in: vendorUserIds } })
+    ]);
+
+    // Build lookup maps for O(1) access
+    const farmerProfileMap = Object.fromEntries(farmerProfiles.map(fp => [String(fp.user), fp]));
+    const vendorProfileMap = Object.fromEntries(vendorProfiles.map(vp => [String(vp.user), vp]));
+
+    // Enrich orders with coordinates (no DB calls in loop)
+    const enrichedOrders = orders.map(order => {
         const orderObj = order.toObject();
-        const farmerProfile = await FarmerProfile.findOne({ user: order.farmer._id });
-        const vendorProfile = await VendorProfile.findOne({ user: order.vendor._id });
-        
+        const farmerProfile = farmerProfileMap[String(order.farmer._id)];
+        const vendorProfile = vendorProfileMap[String(order.vendor._id)];
+
         // Prioritize crop-specific coordinates, fallback to profile coordinates, fallback to default Indore coordinates
         orderObj.farmerCoordinates = order.crop?.coordinates || farmerProfile?.location?.coordinates || { lat: 22.7196, lng: 75.8577 };
         orderObj.vendorCoordinates = vendorProfile?.coordinates || vendorProfile?.location?.coordinates || { lat: 28.61, lng: 77.20 };
         orderObj.farmerAddress = order.crop?.location || farmerProfile?.location?.address || 'Farmer Farm';
         orderObj.vendorAddress = vendorProfile?.godownAddress || `${vendorProfile?.businessName || order.vendor?.name || 'Vendor'}'s Shop`;
         return orderObj;
-    }));
+    });
 
     const BATCH_RADIUS_KM = 10;
     const maxBatchSize = 20; // Default max size (can be refined when assigning driver)
@@ -158,9 +173,10 @@ const autoGroupOrders = asyncHandler(async (req, res) => {
         const startLng = currentOrder.farmerCoordinates.lng;
         const { route, totalDistance } = optimizeStops(currentBatchOrders, startLat, startLng);
 
-        // Save DeliveryBatch
+        // Save DeliveryBatch — include farmerOwner for ownership filtering
         const batch = await DeliveryBatch.create({
             orders: currentBatchOrders.map(o => o._id),
+            farmerOwner: req.user.id, // ── track which farmer created this batch
             optimizedRoute: route,
             totalDistance,
             batchStatus: 'Batch Created'
@@ -192,16 +208,33 @@ const assignDriverToBatch = asyncHandler(async (req, res) => {
     const batch = await DeliveryBatch.findById(req.params.id);
     if (!batch) throw new ErrorResponse('Batch not found', 404);
 
+    // ── Batch status guard: can only assign driver to a 'Batch Created' batch ──
+    if (!['Batch Created', 'Driver Assigned'].includes(batch.batchStatus)) {
+        throw new ErrorResponse(`Cannot assign driver — batch is already '${batch.batchStatus}'`, 400);
+    }
+
     const driver = await Driver.findById(driverId);
     if (!driver) throw new ErrorResponse('Driver not found', 404);
 
+    // ── Ownership check: driver must belong to the requesting farmer ────────────
+    if (String(driver.farmer) !== String(req.user.id)) {
+        throw new ErrorResponse('You can only assign your own registered drivers', 403);
+    }
+
+    // ── Availability check FIRST — before touching the old driver ────────────
+    // IMPORTANT: must check new driver BEFORE freeing old driver to avoid
+    // data inconsistency (old driver freed but new driver fails → batch orphaned)
     if (driver.status === 'On Delivery') {
         throw new ErrorResponse('Driver is currently on another delivery task', 400);
     }
 
+    // ── Reassignment guard: free the previous driver only after new driver passes ──
+    if (batch.driver && String(batch.driver) !== String(driver._id)) {
+        await Driver.findByIdAndUpdate(batch.driver, { status: 'Available' });
+    }
+
     // Vehicle capacity validations
     const orderCount = batch.orders.length;
-    const VehicleType = require('../models/VehicleType');
     const vehicleSpecs = await VehicleType.findOne({ vehicleName: driver.vehicleType });
     const capacityLimit = vehicleSpecs ? vehicleSpecs.maxOrders : (driver.vehicleType === 'Bike' ? 5 : 20);
 
@@ -247,12 +280,22 @@ const assignDriverToBatch = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get active batch for driver
-// @route   GET /api/batches/driver/active
-// @access  Private
+// @route   GET /api/batches/driver/active?driverId=<id>
+// @access  Public (driver shares link via URL — no auth account)
+// NOTE: Drivers in this system are registered by farmers and have no login account.
+//       The DriverBatchConsole page receives driverId from the URL (?driverId=xxx)
+//       and passes it as a query param to this endpoint.
 const getActiveBatchForDriver = asyncHandler(async (req, res) => {
-    // Find driver profile for logged in user (Driver or Farmer Fleet User)
-    const driver = await Driver.findOne({ user: req.user.id });
-    if (!driver) throw new ErrorResponse('Driver profile not found', 404);
+    const { driverId } = req.query;
+    if (!driverId) throw new ErrorResponse('driverId query param is required', 400);
+
+    // Validate ObjectId format to prevent DB cast errors
+    if (!driverId.match(/^[a-f\d]{24}$/i)) {
+        throw new ErrorResponse('Invalid driverId format', 400);
+    }
+
+    const driver = await Driver.findById(driverId);
+    if (!driver) throw new ErrorResponse('Driver not found', 404);
 
     const batch = await DeliveryBatch.findOne({
         driver: driver._id,
@@ -287,13 +330,47 @@ const updateBatchStatus = asyncHandler(async (req, res) => {
     const batch = await DeliveryBatch.findById(req.params.id);
     if (!batch) throw new ErrorResponse('Batch not found', 404);
 
+    // ── Ownership check — only the farmer who owns the batch can change its status
+    if (
+        req.user.role === 'FARMER' &&
+        batch.farmerOwner &&
+        String(batch.farmerOwner) !== String(req.user.id)
+    ) {
+        throw new ErrorResponse('You do not have permission to update this batch', 403);
+    }
+
+    // ── State Machine Guard — enforce valid transitions ──────────────────────
+    const validTransitions = {
+        'Driver Assigned':     ['Out For Delivery'],
+        'Out For Delivery':    ['Completed'],
+        'Partially Delivered': ['Completed']
+    };
+    if (!validTransitions[batch.batchStatus]?.includes(status)) {
+        const allowed = validTransitions[batch.batchStatus];
+        const hint = allowed ? `Allowed next: ${allowed.join(', ')}` : 'No further transitions allowed';
+        throw new ErrorResponse(
+            `Cannot transition batch from '${batch.batchStatus}' to '${status}'. ${hint}.`,
+            400
+        );
+    }
+
     batch.batchStatus = status;
     await batch.save();
 
-    // Update all orders in batch
+    // ── Fix C: Record dispatchTime when batch goes Out For Delivery ─────────
+    const orderUpdateFields = { deliveryStatus: status };
+    if (status === 'Out For Delivery') {
+        orderUpdateFields.dispatchTime = new Date();
+    }
+
+    // ── Fix B: Free the driver when batch is force-completed via this endpoint
+    if (status === 'Completed' && batch.driver) {
+        await Driver.findByIdAndUpdate(batch.driver, { status: 'Available' });
+    }
+
     await OrderRequest.updateMany(
         { _id: { $in: batch.orders } },
-        { deliveryStatus: status }
+        orderUpdateFields
     );
 
     res.json({ success: true, message: `Batch status updated to ${status}`, data: batch });
@@ -311,17 +388,42 @@ const deliverOrderInBatch = asyncHandler(async (req, res) => {
     const batch = await DeliveryBatch.findById(batchId);
     if (!batch) throw new ErrorResponse('Batch not found', 404);
 
-    const order = await OrderRequest.findById(orderId);
+    // Must explicitly select deliveryOTP since it has select:false in schema
+    const order = await OrderRequest.findById(orderId).select('+deliveryOTP');
     if (!order) throw new ErrorResponse('Order not found', 404);
 
-    // Verify OTP
-    if (order.deliveryOTP !== otp) {
+    // ── Fix D: Validate that the order actually belongs to this batch ────────
+    const batchOrderIds = batch.orders.map(id => String(id));
+    if (!batchOrderIds.includes(String(orderId))) {
+        throw new ErrorResponse('This order does not belong to the specified batch', 400);
+    }
+
+    // Guard: prevent re-delivering an already completed order
+    if (order.deliveryStatus === 'Completed') {
+        throw new ErrorResponse('This order has already been delivered', 400);
+    }
+
+    // Guard: batch must be Out For Delivery or Partially Delivered
+    const deliverableStatuses = ['Out For Delivery', 'Partially Delivered'];
+    if (!deliverableStatuses.includes(batch.batchStatus)) {
+        throw new ErrorResponse(`Cannot deliver — batch status is '${batch.batchStatus}'. Batch must be dispatched first.`, 400);
+    }
+
+    // Guard: OTP format — must be 4–6 digits
+    if (!/^\d{4,6}$/.test(otp.toString().trim())) {
+        throw new ErrorResponse('OTP must be 4 to 6 digits', 400);
+    }
+
+    // Verify OTP — Mongoose getter automatically decrypted it when reading
+    const otpValid = order.deliveryOTP === otp.toString().trim();
+    if (!otpValid) {
         throw new ErrorResponse('Invalid delivery OTP', 400);
     }
 
-    // Complete order
+    // Complete order — also clear OTP after use so it cannot be replayed
     order.deliveryStatus = 'Completed';
     order.status = 'Completed';
+    order.deliveryOTP = undefined; // ← Fix: clear OTP after successful delivery
     await order.save();
 
     // Check batch status progression
@@ -355,23 +457,58 @@ const deliverOrderInBatch = asyncHandler(async (req, res) => {
     });
 });
 
-// @desc    Get all batches
-// @route   GET /api/batches
+// @desc    Get all batches with optional pagination and status filter
+// @route   GET /api/batches?status=&page=&limit=
 // @access  Private
 const getAllBatches = asyncHandler(async (req, res) => {
-    const batches = await DeliveryBatch.find()
-        .populate('driver')
-        .populate({
-            path: 'orders',
-            populate: [
-                { path: 'crop', select: 'name unit price' },
-                { path: 'farmer', select: 'name phone' },
-                { path: 'vendor', select: 'name phone' }
-            ]
-        })
-        .sort({ createdAt: -1 });
+    const { status, page = 1, limit = 20 } = req.query;
+    const pageNum  = Math.max(1, parseInt(page)  || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const skip = (pageNum - 1) * limitNum;
 
-    res.json({ success: true, data: batches });
+    // Build query — filter by farmer ownership when role is FARMER
+    // Use $or to include both: batches owned by this farmer AND legacy batches
+    // that were created before the farmerOwner field existed (farmerOwner is null/missing)
+    const query = {};
+    if (req.user.role === 'FARMER') {
+        query.$or = [
+            { farmerOwner: req.user.id },
+            { farmerOwner: { $exists: false } },
+            { farmerOwner: null }
+        ];
+    }
+
+    // Optionally filter by batchStatus
+    if (status) {
+        const validStatuses = ['Batch Created', 'Driver Assigned', 'Out For Delivery', 'Partially Delivered', 'Completed'];
+        if (!validStatuses.includes(status)) {
+            throw new ErrorResponse(`Invalid status filter. Valid values: ${validStatuses.join(', ')}`, 400);
+        }
+        query.batchStatus = status;
+    }
+
+    const [batches, total] = await Promise.all([
+        DeliveryBatch.find(query)
+            .populate('driver')
+            .populate({
+                path: 'orders',
+                populate: [
+                    { path: 'crop', select: 'name unit price' },
+                    { path: 'farmer', select: 'name phone' },
+                    { path: 'vendor', select: 'name phone' }
+                ]
+            })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limitNum),
+        DeliveryBatch.countDocuments(query)
+    ]);
+
+    res.json({
+        success: true,
+        pagination: { total, page: pageNum, limit: limitNum, pages: Math.ceil(total / limitNum) },
+        data: batches
+    });
 });
 
 // @desc    Get single batch by ID (for loading checklist)
@@ -391,6 +528,16 @@ const getBatchById = asyncHandler(async (req, res) => {
 
     if (!batch) throw new ErrorResponse('Batch not found', 404);
 
+    // Ownership check — only batch owner or admin can view full details
+    // Legacy batches (no farmerOwner) are accessible to any authenticated farmer
+    if (
+        req.user.role === 'FARMER' &&
+        batch.farmerOwner &&
+        String(batch.farmerOwner) !== String(req.user.id)
+    ) {
+        throw new ErrorResponse('You do not have access to this batch', 403);
+    }
+
     res.json({ success: true, data: batch });
 });
 
@@ -403,6 +550,15 @@ const updateBatchLoadPlan = asyncHandler(async (req, res, next) => {
 
     if (!batch) {
         return next(new ErrorResponse('Batch not found', 404));
+    }
+
+    // ── Fix E: Block load plan edits if batch is already in transit ──────────
+    const lockedStatuses = ['Out For Delivery', 'Partially Delivered', 'Completed'];
+    if (lockedStatuses.includes(batch.batchStatus)) {
+        return next(new ErrorResponse(
+            `Cannot modify load plan — batch is already '${batch.batchStatus}'. Only 'Batch Created' or 'Driver Assigned' batches can be edited.`,
+            400
+        ));
     }
 
     // Handle order removal if requested
@@ -428,6 +584,25 @@ const updateBatchLoadPlan = asyncHandler(async (req, res, next) => {
 
     // Update optimizedRoute if provided
     if (optimizedRoute) {
+        // ── Validate route stops before saving ────────────────────────────────
+        if (!Array.isArray(optimizedRoute) || optimizedRoute.length === 0) {
+            return next(new ErrorResponse('optimizedRoute must be a non-empty array', 400));
+        }
+        for (let i = 0; i < optimizedRoute.length; i++) {
+            const stop = optimizedRoute[i];
+            if (
+                !stop.coordinates ||
+                typeof stop.coordinates.lat !== 'number' ||
+                typeof stop.coordinates.lng !== 'number' ||
+                typeof stop.sequence !== 'number'
+            ) {
+                return next(new ErrorResponse(
+                    `Stop at index ${i} is invalid — must have coordinates.lat, coordinates.lng (numbers) and sequence (number)`,
+                    400
+                ));
+            }
+        }
+
         batch.optimizedRoute = optimizedRoute;
 
         // Recalculate distance along the new route
@@ -443,6 +618,18 @@ const updateBatchLoadPlan = asyncHandler(async (req, res, next) => {
     }
 
     await batch.save();
+
+    // ── Notify assigned driver if route was updated ──────────────────────────────────
+    if (optimizedRoute && batch.driver) {
+        const firstOrderId = batch.orders[0];
+        await createNotification(
+            batch.driver,   // recipient: driver
+            req.user.id,    // actor: farmer who changed the plan
+            firstOrderId,
+            'ORDER_UPDATED',
+            `📋 The load plan for your batch has been updated. Please review your new delivery sequence before dispatching.`
+        );
+    }
 
     // Populate and return updated batch
     const updated = await DeliveryBatch.findById(req.params.id)
