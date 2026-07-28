@@ -144,4 +144,68 @@ const updateProfile = asyncHandler(async (req, res, next) => {
     });
 });
 
-module.exports = { registerFarmer, getProfile, updateProfile };
+const mongoose = require('mongoose');
+const OrderRequest = require('../models/OrderRequest');
+const Crop = require('../models/Crop');
+
+// @route   GET /api/farmers/stats
+// @desc    Get dashboard statistics & analytics for logged in farmer
+// @access  Private (Farmer only)
+const getFarmerDashboardStats = asyncHandler(async (req, res, next) => {
+    const farmerId = req.user.id;
+
+    const user = await User.findById(farmerId).select('name bankDetails');
+
+    // Aggregate total earnings from completed orders
+    const earningsAgg = await OrderRequest.aggregate([
+        { $match: { farmer: new mongoose.Types.ObjectId(farmerId), status: 'Completed' } },
+        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+    ]);
+
+    const totalEarnings = earningsAgg.length > 0 ? earningsAgg[0].total : 0;
+
+    // Count active crops
+    const activeCropsCount = await Crop.countDocuments({
+        farmerId: farmerId,
+        availabilityStatus: { $ne: 'Sold Out' }
+    });
+
+    // Count pending orders
+    const pendingOrdersCount = await OrderRequest.countDocuments({
+        farmer: farmerId,
+        status: 'Pending'
+    });
+
+    // Total orders count
+    const totalOrdersCount = await OrderRequest.countDocuments({
+        farmer: farmerId
+    });
+
+    // Recent orders
+    const recentOrders = await OrderRequest.find({ farmer: farmerId })
+        .populate('vendor', 'name phone')
+        .populate('crop', 'name unit price')
+        .sort({ createdAt: -1 })
+        .limit(3);
+
+    const hasBankDetails = Boolean(
+        user?.bankDetails?.accountNumber && user?.bankDetails?.accountNumber.trim() !== ''
+    );
+
+    res.status(200).json({
+        success: true,
+        data: {
+            totalEarnings,
+            activeCropsCount,
+            pendingOrdersCount,
+            totalOrdersCount,
+            recentOrders,
+            hasBankDetails,
+            user: {
+                name: user?.name || ''
+            }
+        }
+    });
+});
+
+module.exports = { registerFarmer, getProfile, updateProfile, getFarmerDashboardStats };

@@ -1,5 +1,5 @@
 const express = require('express');
-const { registerFarmer, getProfile, updateProfile } = require('../controllers/farmerController');
+const { registerFarmer, getProfile, updateProfile, getFarmerDashboardStats } = require('../controllers/farmerController');
 const validateRequest = require('../middleware/validateRequest');
 const { registerFarmerSchema, updateFarmerProfileSchema } = require('../validations/authSchemas');
 const { protect, authorize } = require('../middleware/authMiddleware');
@@ -9,6 +9,10 @@ const router = express.Router();
 // @route   POST /api/farmers/register
 // @desc    Register a new farmer
 router.post('/register', validateRequest(registerFarmerSchema), registerFarmer);
+
+// @route   GET /api/farmers/stats
+// @desc    Get dashboard statistics for logged-in farmer
+router.get('/stats', protect, authorize('FARMER'), getFarmerDashboardStats);
 
 // @route   GET /api/farmers/profile
 // @desc    Get current farmer profile
