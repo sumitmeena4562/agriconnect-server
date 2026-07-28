@@ -147,6 +147,8 @@ const updateProfile = asyncHandler(async (req, res, next) => {
 const mongoose = require('mongoose');
 const OrderRequest = require('../models/OrderRequest');
 const Crop = require('../models/Crop');
+const Driver = require('../models/Driver');
+const DeliveryBatch = require('../models/DeliveryBatch');
 
 // @route   GET /api/farmers/stats
 // @desc    Get dashboard statistics & analytics for logged in farmer
@@ -155,14 +157,21 @@ const getFarmerDashboardStats = asyncHandler(async (req, res, next) => {
     const farmerId = req.user.id;
 
     const user = await User.findById(farmerId).select('name bankDetails');
+    const profile = await FarmerProfile.findOne({ user: farmerId }).select('location');
 
     // Aggregate total earnings from completed orders
     const earningsAgg = await OrderRequest.aggregate([
         { $match: { farmer: new mongoose.Types.ObjectId(farmerId), status: 'Completed' } },
         { $group: { _id: null, total: { $sum: '$totalAmount' } } }
     ]);
-
     const totalEarnings = earningsAgg.length > 0 ? earningsAgg[0].total : 0;
+
+    // Aggregate total active crop stock (quantity)
+    const stockAgg = await Crop.aggregate([
+        { $match: { farmerId: new mongoose.Types.ObjectId(farmerId), availabilityStatus: { $ne: 'Sold Out' } } },
+        { $group: { _id: null, totalQty: { $sum: '$quantity' } } }
+    ]);
+    const totalStockKg = stockAgg.length > 0 ? stockAgg[0].totalQty : 0;
 
     // Count active crops
     const activeCropsCount = await Crop.countDocuments({
@@ -176,17 +185,32 @@ const getFarmerDashboardStats = asyncHandler(async (req, res, next) => {
         status: 'Pending'
     });
 
-    // Total orders count
-    const totalOrdersCount = await OrderRequest.countDocuments({
-        farmer: farmerId
-    });
+    // Drivers analytics
+    const driversCount = await Driver.countDocuments({ farmer: farmerId });
+    const availableDriversCount = await Driver.countDocuments({ farmer: farmerId, status: 'Available' });
 
-    // Recent orders
-    const recentOrders = await OrderRequest.find({ farmer: farmerId })
+    // Total orders count
+    const totalOrdersCount = await OrderRequest.countDocuments({ farmer: farmerId });
+
+    // Pending order action requests feed
+    const pendingOrdersList = await OrderRequest.find({ farmer: farmerId, status: 'Pending' })
         .populate('vendor', 'name phone')
         .populate('crop', 'name unit price')
         .sort({ createdAt: -1 })
         .limit(3);
+
+    // Active batches in transit or assigned
+    const activeBatches = await DeliveryBatch.find({
+        $or: [{ farmerOwner: farmerId }, { farmerOwner: { $exists: false } }],
+        batchStatus: { $in: ['Driver Assigned', 'Out For Delivery', 'Partially Delivered'] }
+    })
+    .populate('driver', 'name phone vehicleType vehicleNumber')
+    .populate({
+        path: 'orders',
+        populate: { path: 'crop', select: 'name unit' }
+    })
+    .sort({ updatedAt: -1 })
+    .limit(2);
 
     const hasBankDetails = Boolean(
         user?.bankDetails?.accountNumber && user?.bankDetails?.accountNumber.trim() !== ''
@@ -197,10 +221,15 @@ const getFarmerDashboardStats = asyncHandler(async (req, res, next) => {
         data: {
             totalEarnings,
             activeCropsCount,
+            totalStockKg,
             pendingOrdersCount,
             totalOrdersCount,
-            recentOrders,
+            driversCount,
+            availableDriversCount,
+            pendingOrdersList,
+            activeBatches,
             hasBankDetails,
+            coordinates: profile?.location?.coordinates || { lat: 22.7196, lng: 75.8577 },
             user: {
                 name: user?.name || ''
             }
