@@ -216,6 +216,11 @@ const getFarmerDashboardStats = asyncHandler(async (req, res, next) => {
         user?.bankDetails?.accountNumber && user?.bankDetails?.accountNumber.trim() !== ''
     );
 
+    const locObj = profile?.location || {};
+    const locationName = locObj.district 
+        ? `${locObj.district}${locObj.state ? `, ${locObj.state}` : ''}`
+        : (locObj.village || 'Indore, MP');
+
     res.status(200).json({
         success: true,
         data: {
@@ -229,6 +234,7 @@ const getFarmerDashboardStats = asyncHandler(async (req, res, next) => {
             pendingOrdersList,
             activeBatches,
             hasBankDetails,
+            locationName,
             coordinates: profile?.location?.coordinates || { lat: 22.7196, lng: 75.8577 },
             user: {
                 name: user?.name || ''
