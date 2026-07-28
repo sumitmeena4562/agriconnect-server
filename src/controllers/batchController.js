@@ -7,6 +7,7 @@ const User = require('../models/User');
 const VehicleType = require('../models/VehicleType');
 const bcrypt = require('bcryptjs'); // for OTP hashing
 const { createNotification } = require('./notificationController');
+const { generateDriverToken, verifyDriverToken } = require('../utils/driverToken');
 const asyncHandler = require('../middleware/asyncHandler');
 const ErrorResponse = require('../utils/errorResponse');
 
@@ -139,7 +140,7 @@ const autoGroupOrders = asyncHandler(async (req, res) => {
         return orderObj;
     });
 
-    const BATCH_RADIUS_KM = 10;
+    const BATCH_RADIUS_KM = Math.min(100, Math.max(1, parseFloat(req.body.radiusKm) || 10));
     const maxBatchSize = 20; // Default max size (can be refined when assigning driver)
     const batchesCreated = [];
     const usedOrderIds = new Set();
@@ -250,6 +251,12 @@ const assignDriverToBatch = asyncHandler(async (req, res) => {
     batch.batchStatus = 'Driver Assigned';
     await batch.save();
 
+    // Broadcast Socket.io update
+    const io = req.app.get('io');
+    if (io) {
+        io.emit(`batch-${batch._id}-update`);
+    }
+
     // Update all orders in batch
     await OrderRequest.updateMany(
         { _id: { $in: batch.orders } },
@@ -280,14 +287,18 @@ const assignDriverToBatch = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get active batch for driver
-// @route   GET /api/batches/driver/active?driverId=<id>
-// @access  Public (driver shares link via URL — no auth account)
-// NOTE: Drivers in this system are registered by farmers and have no login account.
-//       The DriverBatchConsole page receives driverId from the URL (?driverId=xxx)
-//       and passes it as a query param to this endpoint.
+// @route   GET /api/batches/driver/active?driverId=<id>&token=<token>
+// @access  Public (driver shares link via URL — verified via signed token or driverId)
 const getActiveBatchForDriver = asyncHandler(async (req, res) => {
-    const { driverId } = req.query;
-    if (!driverId) throw new ErrorResponse('driverId query param is required', 400);
+    let { driverId, token } = req.query;
+
+    if (token) {
+        const verifiedId = verifyDriverToken(token);
+        if (!verifiedId) throw new ErrorResponse('Invalid or expired driver security token', 401);
+        driverId = verifiedId;
+    }
+
+    if (!driverId) throw new ErrorResponse('driverId or token query param is required', 400);
 
     // Validate ObjectId format to prevent DB cast errors
     if (!driverId.match(/^[a-f\d]{24}$/i)) {
@@ -313,7 +324,8 @@ const getActiveBatchForDriver = asyncHandler(async (req, res) => {
         return res.json({ success: true, message: 'No active delivery batch', data: null });
     }
 
-    res.json({ success: true, data: batch });
+    const secureToken = generateDriverToken(driver._id);
+    res.json({ success: true, data: batch, token: secureToken });
 });
 
 // @desc    Update batch status (e.g. Out For Delivery)
@@ -356,6 +368,12 @@ const updateBatchStatus = asyncHandler(async (req, res) => {
 
     batch.batchStatus = status;
     await batch.save();
+
+    // Broadcast Socket.io update
+    const io = req.app.get('io');
+    if (io) {
+        io.emit(`batch-${batch._id}-update`);
+    }
 
     // ── Fix C: Record dispatchTime when batch goes Out For Delivery ─────────
     const orderUpdateFields = { deliveryStatus: status };
@@ -440,6 +458,12 @@ const deliverOrderInBatch = asyncHandler(async (req, res) => {
         batch.batchStatus = 'Partially Delivered';
     }
     await batch.save();
+
+    // Broadcast Socket.io update
+    const io = req.app.get('io');
+    if (io) {
+        io.emit(`batch-${batch._id}-update`);
+    }
 
     // Notify vendor
     await createNotification(
@@ -578,6 +602,10 @@ const updateBatchLoadPlan = asyncHandler(async (req, res, next) => {
         // If batch becomes empty, delete it
         if (batch.orders.length === 0) {
             await DeliveryBatch.findByIdAndDelete(req.params.id);
+            const io = req.app.get('io');
+            if (io) {
+                io.emit(`batch-${req.params.id}-update`);
+            }
             return res.json({ success: true, message: 'Batch deleted because all orders were removed.', data: null });
         }
     }
@@ -618,6 +646,12 @@ const updateBatchLoadPlan = asyncHandler(async (req, res, next) => {
     }
 
     await batch.save();
+
+    // Broadcast Socket.io update
+    const io = req.app.get('io');
+    if (io) {
+        io.emit(`batch-${batch._id}-update`);
+    }
 
     // ── Notify assigned driver if route was updated ──────────────────────────────────
     if (optimizedRoute && batch.driver) {

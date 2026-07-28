@@ -1,4 +1,6 @@
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const colors = require('colors');
@@ -22,6 +24,23 @@ if (!process.env.JWT_SECRET) {
 connectDB();
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: process.env.ALLOWED_ORIGIN || 'http://localhost:5173',
+        methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+        credentials: true
+    }
+});
+
+app.set('io', io);
+
+io.on('connection', (socket) => {
+    console.log(`[Socket.io] New client connected: ${socket.id}`);
+    socket.on('disconnect', () => {
+        console.log(`[Socket.io] Client disconnected: ${socket.id}`);
+    });
+});
 
 // Set security headers
 app.use(helmet());
@@ -94,7 +113,7 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
     console.log(`\n=========================================`.green.bold);
     console.log(`    🌾 AGRICONNECT BACKEND SERVER 🌾     `.green.bold);
     console.log(`=========================================`.green.bold);
