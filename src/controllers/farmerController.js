@@ -159,10 +159,22 @@ const getFarmerDashboardStats = asyncHandler(async (req, res, next) => {
     const user = await User.findById(farmerId).select('name bankDetails');
     const profile = await FarmerProfile.findOne({ user: farmerId }).select('location');
 
-    // Aggregate total earnings from completed orders
+    // Aggregate total earnings from Completed & Accepted orders
     const earningsAgg = await OrderRequest.aggregate([
-        { $match: { farmer: new mongoose.Types.ObjectId(farmerId), status: 'Completed' } },
-        { $group: { _id: null, total: { $sum: '$totalAmount' } } }
+        { $match: { farmer: new mongoose.Types.ObjectId(farmerId), status: { $in: ['Completed', 'Accepted'] } } },
+        { 
+            $group: { 
+                _id: null, 
+                total: { 
+                    $sum: { 
+                        $ifNull: [
+                            '$payment.amount', 
+                            { $multiply: [ '$requestedQuantity', { $ifNull: [ '$offeredPrice', 0 ] } ] }
+                        ] 
+                    } 
+                } 
+            } 
+        }
     ]);
     const totalEarnings = earningsAgg.length > 0 ? earningsAgg[0].total : 0;
 
