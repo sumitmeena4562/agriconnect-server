@@ -46,7 +46,14 @@ const userSchema = new mongoose.Schema({
     bankDetails: {
         accountName: { type: String, default: '' },
         accountNumber: { type: String, default: '' },
-        ifscCode: { type: String, default: '' }
+        ifscCode: { type: String, default: '' },
+        upiId: { type: String, default: '' },
+        payoutPreference: { type: String, default: 'UPI Instant Transfer' }
+    },
+    preferences: {
+        whatsappAlerts: { type: Boolean, default: true },
+        smsAlerts: { type: Boolean, default: true },
+        preferredLanguage: { type: String, default: 'Hindi' }
     },
     kycStatus: {
         type: String,

@@ -114,10 +114,23 @@ const verifyLoginOtpSchema = z.object({
 // Schema for PUT /api/v1/farmers/profile
 const updateFarmerProfileSchema = z.object({
     name: z.string().min(3, 'Name must be at least 3 characters').optional(),
+    email: z.string().email('Enter a valid email address').optional().or(z.literal('')),
     bankDetails: z.object({
         accountName:   z.string().max(100).optional(),
         accountNumber: z.string().max(30).optional(),
         ifscCode:      z.string().max(20).optional(),
+        upiId:         z.string().max(50).optional(),
+        payoutPreference: z.string().optional(),
+    }).optional(),
+    preferences: z.object({
+        whatsappAlerts: z.boolean().optional(),
+        smsAlerts: z.boolean().optional(),
+        preferredLanguage: z.string().optional(),
+    }).optional(),
+    kycDetails: z.object({
+        aadhaarNumber: z.string().optional(),
+        panNumber: z.string().optional(),
+        kccCardId: z.string().optional(),
     }).optional(),
     location: z.object({
         state:    z.string().min(2, 'State is required').optional(),
@@ -129,7 +142,8 @@ const updateFarmerProfileSchema = z.object({
         }).optional(),
     }).optional(),
     farmDetails: z.object({
-        landSize:   z.union([z.string(), z.number()]).transform(v => parseFloat(v)).refine(v => !isNaN(v) && v > 0, { message: 'Land size must be positive' }).optional(),
+        landSize:   z.union([z.string(), z.number()]).transform(v => parseFloat(v)).optional(),
+        landHoldingAcres: z.union([z.string(), z.number()]).transform(v => parseFloat(v)).optional(),
         landUnit:   z.string().optional(),
         crops:      z.string().optional(),
         irrigation: z.string().optional(),

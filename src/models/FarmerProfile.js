@@ -15,11 +15,17 @@ const farmerProfileSchema = new mongoose.Schema({
             lng: { type: Number }
         }
     },
+    kycDetails: {
+        aadhaarNumber: { type: String, default: '' },
+        panNumber: { type: String, default: '' },
+        kccCardId: { type: String, default: '' }
+    },
     farmDetails: {
-        landSize: { type: Number, required: true },
-        landUnit: { type: String, required: true },
-        crops: { type: String, required: true },
-        irrigation: { type: String, required: true }
+        landSize: { type: Number, default: 0 },
+        landHoldingAcres: { type: Number, default: 0 },
+        landUnit: { type: String, default: 'Acres' },
+        crops: { type: String, default: '' },
+        irrigation: { type: String, default: '' }
     },
     isVerified: {
         type: Boolean,

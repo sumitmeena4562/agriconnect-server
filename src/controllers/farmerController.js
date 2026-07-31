@@ -107,15 +107,17 @@ const getProfile = asyncHandler(async (req, res, next) => {
 });
 
 // @route   PUT /api/farmers/profile
-// @desc    Update farmer user details, bank details and profile
+// @desc    Update farmer user details, bank details, preferences and profile
 // @access  Private
 const updateProfile = asyncHandler(async (req, res, next) => {
-    const { name, bankDetails, location, farmDetails } = req.body;
+    const { name, email, bankDetails, preferences, location, farmDetails, kycDetails } = req.body;
 
     // 1. Update User details
     const userFields = {};
-    if (name) userFields.name = name;
-    if (bankDetails) userFields.bankDetails = bankDetails;
+    if (name !== undefined) userFields.name = name;
+    if (email !== undefined) userFields.email = email || undefined;
+    if (bankDetails !== undefined) userFields.bankDetails = bankDetails;
+    if (preferences !== undefined) userFields.preferences = preferences;
 
     const user = await User.findByIdAndUpdate(
         req.user.id,
@@ -125,13 +127,14 @@ const updateProfile = asyncHandler(async (req, res, next) => {
 
     // 2. Update Farmer Profile details
     const profileFields = {};
-    if (location) profileFields.location = location;
-    if (farmDetails) profileFields.farmDetails = farmDetails;
+    if (location !== undefined) profileFields.location = location;
+    if (farmDetails !== undefined) profileFields.farmDetails = farmDetails;
+    if (kycDetails !== undefined) profileFields.kycDetails = kycDetails;
 
     const profile = await FarmerProfile.findOneAndUpdate(
         { user: req.user.id },
         { $set: profileFields },
-        { new: true, runValidators: true }
+        { new: true, upsert: true, runValidators: true }
     );
 
     res.status(200).json({
@@ -141,6 +144,35 @@ const updateProfile = asyncHandler(async (req, res, next) => {
             user,
             profile
         }
+    });
+});
+
+// @route   PUT /api/farmers/change-password
+// @desc    Change password for logged in farmer
+// @access  Private
+const changePassword = asyncHandler(async (req, res, next) => {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+        throw new ErrorResponse('Please provide current password and new password', 400);
+    }
+
+    const user = await User.findById(req.user.id).select('+password');
+    if (!user) {
+        throw new ErrorResponse('User not found', 404);
+    }
+
+    const isMatch = await user.matchPassword(currentPassword);
+    if (!isMatch) {
+        throw new ErrorResponse('Current password is incorrect', 400);
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+        success: true,
+        message: 'Password updated successfully'
     });
 });
 
@@ -255,4 +287,4 @@ const getFarmerDashboardStats = asyncHandler(async (req, res, next) => {
     });
 });
 
-module.exports = { registerFarmer, getProfile, updateProfile, getFarmerDashboardStats };
+module.exports = { registerFarmer, getProfile, updateProfile, changePassword, getFarmerDashboardStats };
